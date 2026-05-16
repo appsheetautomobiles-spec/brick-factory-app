@@ -118,7 +118,7 @@ export default function Dashboard() {
 
           {/* Single-line greeting + last entry */}
           <h1 className="text-2xl font-bold text-white capitalize">
-            {greeting}, {firstName} 👋
+            {greeting}, {firstName} ✨
           </h1>
           {lastEntry ? (
             <p className="text-orange-200 text-sm mt-1.5 font-medium">

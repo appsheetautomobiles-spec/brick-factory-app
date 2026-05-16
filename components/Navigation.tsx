@@ -41,7 +41,7 @@ export default function Navigation({ user }: { user: any }) {
       <nav className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center text-white text-sm font-bold">I</div>
+            <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center text-base">🧱</div>
             <span className="font-bold text-gray-900 dark:text-white text-base tracking-tight">Ittige Factory</span>
           </div>
           <div className="flex items-center gap-2">
