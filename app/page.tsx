@@ -1,9 +1,35 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    // Handle the case where Supabase redirects back here with ?code= instead of /auth/callback
+    // (happens when callback URL isn't whitelisted in Supabase dashboard yet)
+    const code = new URLSearchParams(window.location.search).get('code');
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        router.replace(error ? '/' : '/dashboard');
+      });
+      return;
+    }
+
+    // Redirect if already logged in
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace('/dashboard');
+    });
+
+    // Catch any auth state change (e.g. implicit flow returning access_token in hash)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) router.replace('/dashboard');
+    });
+
+    return () => subscription.unsubscribe();
+  }, [router]);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
