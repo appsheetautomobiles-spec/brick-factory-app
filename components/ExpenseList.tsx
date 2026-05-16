@@ -12,6 +12,7 @@ interface Expense {
   description: string;
   expense_date: string;
   created_at: string;
+  image_url?: string;
   userName?: string;
 }
 
@@ -38,12 +39,12 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
-  raw_materials: 'bg-orange-100 text-orange-700',
-  labor: 'bg-purple-100 text-purple-700',
-  utilities: 'bg-amber-100 text-amber-700',
-  maintenance: 'bg-red-100 text-red-700',
-  transport: 'bg-green-100 text-green-700',
-  other: 'bg-gray-100 text-gray-600',
+  raw_materials: 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300',
+  labor: 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300',
+  utilities: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300',
+  maintenance: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300',
+  transport: 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300',
+  other: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
 };
 
 const CATEGORY_BAR: Record<string, string> = {
@@ -96,6 +97,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [editForm, setEditForm] = useState<EditForm>({ category: '', amount: '', description: '', expense_date: '' });
   const [editLoading, setEditLoading] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   useEffect(() => { fetchExpenses(); }, [refreshKey]);
 
@@ -190,27 +192,27 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
   ];
 
   if (loading) return (
-    <div className="bg-white rounded-2xl shadow-sm p-8 text-center text-gray-400 text-sm">Loading...</div>
+    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-8 text-center text-gray-400 text-sm">Loading...</div>
   );
 
   if (expenses.length === 0) return (
-    <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-12 text-center">
       <div className="text-5xl mb-3">📋</div>
-      <p className="text-gray-500 font-medium">No expenses yet</p>
-      <p className="text-gray-400 text-sm mt-1">Tap + to add your first expense</p>
+      <p className="text-gray-500 dark:text-gray-300 font-medium">No expenses yet</p>
+      <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">Tap + to add your first expense</p>
     </div>
   );
 
   return (
     <div className="space-y-3">
       {/* Tab bar */}
-      <div className="bg-white rounded-2xl shadow-sm p-1.5 flex gap-1">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-1.5 flex gap-1">
         {TABS.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              activeTab === tab.id ? 'bg-orange-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              activeTab === tab.id ? 'bg-orange-600 text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
             }`}
           >
             {tab.label}
@@ -220,21 +222,21 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
 
       {/* ALL TAB */}
       {activeTab === 'all' && (
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-50 flex justify-between items-center">
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-700 flex justify-between items-center">
+            <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
               {expenses.length} expenses
             </span>
-            <span className="text-sm font-bold text-gray-900">{fmt(grandTotal)}</span>
+            <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{fmt(grandTotal)}</span>
           </div>
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-gray-50 dark:divide-gray-700">
             {expenses.map(expense => (
               <div key={expense.id} className="px-4 py-3.5">
                 {deletingId === expense.id ? (
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm text-gray-700 font-medium">Delete this expense?</p>
+                    <p className="text-sm text-gray-700 dark:text-gray-200 font-medium">Delete this expense?</p>
                     <div className="flex gap-2 shrink-0">
-                      <button onClick={() => setDeletingId(null)} className="px-3 py-1.5 text-xs font-semibold text-gray-600 bg-gray-100 rounded-lg">Cancel</button>
+                      <button onClick={() => setDeletingId(null)} className="px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg">Cancel</button>
                       <button onClick={() => handleDelete(expense.id)} disabled={deleteLoading} className="px-3 py-1.5 text-xs font-semibold text-white bg-red-500 rounded-lg disabled:opacity-50">
                         {deleteLoading ? '...' : 'Delete'}
                       </button>
@@ -242,29 +244,34 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                   </div>
                 ) : (
                   <div className="flex items-start gap-3">
+                    {expense.image_url && (
+                      <button onClick={() => setLightboxUrl(expense.image_url!)} className="shrink-0">
+                        <img src={expense.image_url} alt="receipt" className="w-10 h-10 rounded-lg object-cover border border-gray-200 dark:border-gray-600" />
+                      </button>
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_COLORS[expense.category] || 'bg-gray-100 text-gray-600'}`}>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CATEGORY_COLORS[expense.category] || 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>
                           {CATEGORY_LABELS[expense.category] || expense.category}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-400 truncate">
+                      <p className="text-xs text-gray-400 dark:text-gray-500 truncate">
                         {expense.description || '—'} · {formatDate(expense.expense_date)} · {expense.userName}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-base font-bold text-gray-900 mr-1">{fmt(expense.amount)}</span>
+                      <span className="text-base font-bold text-gray-900 dark:text-gray-100 mr-1">{fmt(expense.amount)}</span>
                       {expense.user_id === currentUserId && (
                         <>
                           <button
                             onClick={() => setEditingExpense(expense)}
-                            className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-blue-500 rounded-lg hover:bg-blue-50 transition-colors"
+                            className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-blue-500 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                           </button>
                           <button
                             onClick={() => setDeletingId(expense.id)}
-                            className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors"
+                            className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                           </button>
@@ -281,9 +288,9 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
 
       {/* CATEGORY TAB */}
       {activeTab === 'category' && (
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-50">
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total · {fmt(grandTotal)}</span>
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-700">
+            <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Total · {fmt(grandTotal)}</span>
           </div>
           <div className="p-4 space-y-4">
             {categoryTotals.map(([cat, total]) => {
@@ -291,15 +298,15 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
               return (
                 <div key={cat}>
                   <div className="flex justify-between items-center mb-1.5">
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${CATEGORY_COLORS[cat] || 'bg-gray-100 text-gray-600'}`}>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${CATEGORY_COLORS[cat] || 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>
                       {CATEGORY_LABELS[cat] || cat}
                     </span>
                     <div className="text-right">
-                      <span className="text-sm font-bold text-gray-900">{fmt(total)}</span>
-                      <span className="text-xs text-gray-400 ml-2">{pct.toFixed(0)}%</span>
+                      <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{fmt(total)}</span>
+                      <span className="text-xs text-gray-400 dark:text-gray-500 ml-2">{pct.toFixed(0)}%</span>
                     </div>
                   </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full ${CATEGORY_BAR[cat] || 'bg-gray-400'} transition-all duration-500`}
                       style={{ width: `${pct}%` }}
@@ -318,21 +325,28 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
           {byDate.map(([date, items]) => {
             const dayTotal = items.reduce((s, e) => s + Number(e.amount), 0);
             return (
-              <div key={date} className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                <div className="px-4 py-3 bg-gray-50 flex justify-between items-center">
-                  <span className="text-sm font-semibold text-gray-700">{formatDateHeader(date)}</span>
-                  <span className="text-sm font-bold text-gray-900">{fmt(dayTotal)}</span>
+              <div key={date} className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
+                <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 flex justify-between items-center">
+                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">{formatDateHeader(date)}</span>
+                  <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{fmt(dayTotal)}</span>
                 </div>
-                <div className="divide-y divide-gray-50">
+                <div className="divide-y divide-gray-50 dark:divide-gray-700">
                   {items.map(expense => (
                     <div key={expense.id} className="px-4 py-3 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${CATEGORY_COLORS[expense.category] || 'bg-gray-100 text-gray-600'}`}>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${CATEGORY_COLORS[expense.category] || 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>
                           {CATEGORY_LABELS[expense.category] || expense.category}
                         </span>
-                        <p className="text-xs text-gray-400 truncate">{expense.description || '—'} · {expense.userName}</p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{expense.description || '—'} · {expense.userName}</p>
                       </div>
-                      <span className="text-sm font-bold text-gray-900 shrink-0">{fmt(expense.amount)}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {expense.image_url && (
+                          <button onClick={() => setLightboxUrl(expense.image_url!)}>
+                            <img src={expense.image_url} alt="receipt" className="w-7 h-7 rounded object-cover border border-gray-200 dark:border-gray-600" />
+                          </button>
+                        )}
+                        <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{fmt(expense.amount)}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -344,11 +358,11 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
 
       {/* USERS TAB */}
       {activeTab === 'users' && (
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-50">
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">By member</span>
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-700">
+            <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">By member</span>
           </div>
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-gray-50 dark:divide-gray-700">
             {byUser.map(([userId, info]) => {
               const pct = grandTotal > 0 ? (info.total / grandTotal) * 100 : 0;
               return (
@@ -358,12 +372,12 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                       {initials(info.name)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{info.name}</p>
-                      <p className="text-xs text-gray-400">{info.count} {info.count === 1 ? 'expense' : 'expenses'}</p>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{info.name}</p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500">{info.count} {info.count === 1 ? 'expense' : 'expenses'}</p>
                     </div>
-                    <span className="text-base font-bold text-gray-900 shrink-0">{fmt(info.total)}</span>
+                    <span className="text-base font-bold text-gray-900 dark:text-gray-100 shrink-0">{fmt(info.total)}</span>
                   </div>
-                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden ml-12">
+                  <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden ml-12">
                     <div className={`h-full rounded-full ${avatarColor(userId)} opacity-70 transition-all duration-500`} style={{ width: `${pct}%` }} />
                   </div>
                 </div>
@@ -377,13 +391,13 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
       {editingExpense && (
         <div className="fixed inset-0 z-40 flex items-end fade-in">
           <div className="absolute inset-0 bg-black/50" onClick={() => setEditingExpense(null)} />
-          <div className="relative w-full max-w-2xl mx-auto bg-white rounded-t-3xl px-4 pt-3 pb-10 slide-up max-h-[90vh] overflow-y-auto">
-            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
-            <h3 className="text-lg font-bold text-gray-900 mb-5">Edit Expense</h3>
+          <div className="relative w-full max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-t-3xl px-4 pt-3 pb-10 slide-up max-h-[90vh] overflow-y-auto">
+            <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-5" />
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-5">Edit Expense</h3>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Category</label>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Category</label>
                 <div className="grid grid-cols-3 gap-2">
                   {Object.entries(CATEGORY_LABELS).map(([cat, label]) => (
                     <button
@@ -391,7 +405,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                       type="button"
                       onClick={() => setEditForm({ ...editForm, category: cat })}
                       className={`py-2.5 px-2 rounded-xl text-xs font-semibold border transition-all ${
-                        editForm.category === cat ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-600 border-gray-200'
+                        editForm.category === cat ? 'bg-orange-600 text-white border-orange-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600'
                       }`}
                     >
                       {label}
@@ -401,42 +415,42 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Amount (₹)</label>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Amount (₹)</label>
                 <input
                   type="number"
                   step="0.01"
                   inputMode="decimal"
                   value={editForm.amount}
                   onChange={e => setEditForm({ ...editForm, amount: e.target.value })}
-                  className="w-full px-4 py-3.5 border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:border-orange-500 bg-gray-50 text-lg font-semibold"
+                  className="w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700 text-lg font-semibold"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Description</label>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Description</label>
                 <input
                   type="text"
                   value={editForm.description}
                   onChange={e => setEditForm({ ...editForm, description: e.target.value })}
-                  className="w-full px-4 py-3.5 border border-gray-200 rounded-xl text-gray-800 focus:outline-none focus:border-orange-500 bg-gray-50"
+                  className="w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-800 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500"
                   placeholder="Optional note"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Date</label>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Date</label>
                 <input
                   type="date"
                   value={editForm.expense_date}
                   onChange={e => setEditForm({ ...editForm, expense_date: e.target.value })}
-                  className="w-full px-4 py-3.5 border border-gray-200 rounded-xl text-gray-800 focus:outline-none focus:border-orange-500 bg-gray-50"
+                  className="w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-800 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700"
                 />
               </div>
 
               <div className="flex gap-3 pt-1">
                 <button
                   onClick={() => setEditingExpense(null)}
-                  className="flex-1 py-4 rounded-xl font-semibold text-gray-600 bg-gray-100 active:scale-95 transition-all"
+                  className="flex-1 py-4 rounded-xl font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 active:scale-95 transition-all"
                 >
                   Cancel
                 </button>
@@ -450,6 +464,22 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* IMAGE LIGHTBOX */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 fade-in p-4"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <img src={lightboxUrl} alt="receipt" className="max-w-full max-h-full rounded-xl object-contain" />
+          <button
+            className="absolute top-4 right-4 w-9 h-9 bg-gray-800 rounded-full flex items-center justify-center text-gray-300 text-lg font-bold"
+            onClick={() => setLightboxUrl(null)}
+          >
+            ×
+          </button>
         </div>
       )}
     </div>

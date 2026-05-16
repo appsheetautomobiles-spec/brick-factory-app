@@ -58,7 +58,7 @@ export default function Dashboard() {
   };
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
       <div className="text-center">
         <div className="text-5xl mb-3">🧱</div>
         <p className="text-gray-400 text-sm font-medium">Loading...</p>
@@ -120,7 +120,7 @@ export default function Dashboard() {
         <div className="fixed inset-0 z-30 flex items-end fade-in">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowAdd(false)} />
           <div className="relative w-full max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-t-3xl px-4 pt-3 pb-10 slide-up max-h-[92vh] overflow-y-auto">
-            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+            <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-5" />
             <ExpenseForm onExpenseAdded={handleExpenseAdded} onCancel={() => setShowAdd(false)} />
           </div>
         </div>
