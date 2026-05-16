@@ -1,4 +1,4 @@
-// Pure Node.js PNG icon generator - no external dependencies
+// Pure Node.js PNG icon generator — brick wall design, no external deps
 const zlib = require('zlib');
 const fs = require('fs');
 const path = require('path');
@@ -29,141 +29,85 @@ function pngChunk(type, data) {
 }
 
 function makePNG(size, drawPixel) {
-  // IHDR
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(size, 0);
   ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8;  // bit depth
-  ihdr[9] = 2;  // RGB color type
-  // compression, filter, interlace = 0
+  ihdr[8] = 8; // 8-bit depth per channel
+  ihdr[9] = 2; // RGB color type
 
-  // Raw image rows (filter byte 0 + RGB per pixel)
   const rowSize = 1 + size * 3;
   const raw = Buffer.alloc(size * rowSize);
   for (let y = 0; y < size; y++) {
-    raw[y * rowSize] = 0; // filter none
+    raw[y * rowSize] = 0; // filter byte: None
     for (let x = 0; x < size; x++) {
       const [r, g, b] = drawPixel(x, y, size);
-      raw[y * rowSize + 1 + x * 3] = r;
+      raw[y * rowSize + 1 + x * 3]     = r;
       raw[y * rowSize + 1 + x * 3 + 1] = g;
       raw[y * rowSize + 1 + x * 3 + 2] = b;
     }
   }
 
-  const idat = zlib.deflateSync(raw);
-
   return Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), // PNG signature
     pngChunk('IHDR', ihdr),
-    pngChunk('IDAT', idat),
+    pngChunk('IDAT', zlib.deflateSync(raw)),
     pngChunk('IEND', Buffer.alloc(0)),
   ]);
 }
 
-// Draw a brick factory icon:
-// - Orange background
-// - Dark brick grid pattern
-// - White brick "B" shape in center area
-function drawIcon(x, y, size) {
-  const cx = size / 2;
-  const cy = size / 2;
-  const pad = size * 0.1;
+// Brick wall pixel renderer
+// - Staggered rows (classic running-bond pattern)
+// - Cream mortar joints
+// - 3-D bevel: highlight top-left, shadow bottom-right
+// - Subtle per-brick tint so adjacent bricks look distinct
+function drawBrickWall(x, y, size) {
+  const mortar = Math.max(2, Math.round(size * 0.019)); // ~10 px at 512
+  const brickW = Math.round((size - 5 * mortar) / 4);  // 4 bricks across
+  const brickH = Math.round(brickW * 0.44);             // classic 2.25:1 ratio
+  const rowH   = brickH + mortar;
+  const bevel  = Math.max(1, Math.round(size * 0.007)); // ~3-4 px at 512
 
-  // Orange background: #EA580C (orange-600)
-  let r = 234, g = 88, b = 12;
+  const row    = Math.floor(y / rowH);
+  const inRowY = y - row * rowH;
 
-  // Brick grid pattern (subtle dark lines)
-  const brickW = size / 6;
-  const brickH = size / 12;
-  const row = Math.floor(y / brickH);
-  const offsetX = (row % 2) * (brickW / 2);
-  const inBrickX = (x + offsetX) % brickW;
-  const inBrickY = y % brickH;
-  const lineThick = Math.max(1, size / 96);
+  // Horizontal mortar joint — warm cream #FFF5E6
+  if (inRowY >= brickH) return [255, 245, 230];
 
-  if (inBrickX < lineThick || inBrickY < lineThick) {
-    // Mortar line - slightly darker orange
-    r = 180; g = 60; b = 8;
-  }
+  // Running-bond stagger: odd rows shift right by half a cell
+  const halfStep = Math.round((brickW + mortar) / 2);
+  const offset   = row % 2 === 0 ? 0 : halfStep;
+  const cellW    = brickW + mortar;
+  const inColX   = ((x + offset) % cellW + cellW) % cellW;
 
-  // White rounded rectangle in center (badge area)
-  const badgeSize = size * 0.5;
-  const bx = cx - badgeSize / 2;
-  const by = cy - badgeSize / 2;
-  const br = badgeSize * 0.18; // corner radius approx
+  // Vertical mortar joint
+  if (inColX >= brickW) return [255, 245, 230];
 
-  if (x >= bx && x <= bx + badgeSize && y >= by && y <= by + badgeSize) {
-    // Rounded corners check
-    const corners = [
-      [bx + br, by + br],
-      [bx + badgeSize - br, by + br],
-      [bx + br, by + badgeSize - br],
-      [bx + badgeSize - br, by + badgeSize - br],
-    ];
-    let inCorner = false;
-    for (const [cx2, cy2] of corners) {
-      const dx = x - cx2, dy = y - cy2;
-      if (Math.sqrt(dx * dx + dy * dy) > br &&
-          x < cx2 + (cx2 === bx + br ? 0 : br) + (cx2 === bx + br ? 0 : 0) &&
-          x > cx2 - (cx2 === bx + br ? br : 0)) {
-        // rough corner culling — good enough
-      }
-    }
-    r = 255; g = 255; b = 255;
-  }
+  // Bevel highlights/shadows for 3-D look
+  if (inRowY < bevel || inColX < bevel)                    return [251, 146, 60]; // #FB923C highlight
+  if (inRowY >= brickH - bevel || inColX >= brickW - bevel) return [154,  52, 18]; // #9A3412 shadow
 
-  // Draw a bold "I" letter in dark orange inside the badge
-  const lx = cx - size * 0.04;
-  const lw = size * 0.08;
-  const lt = size * 0.32; // top of letter
-  const lb = size * 0.68; // bottom of letter
-  const capW = size * 0.2;
-  const capH = size * 0.06;
-
-  // Vertical bar
-  if (x >= lx && x <= lx + lw && y >= lt && y <= lb) {
-    r = 120; g = 40; b = 5;
-  }
-  // Top cap
-  if (x >= cx - capW / 2 && x <= cx + capW / 2 && y >= lt && y <= lt + capH) {
-    r = 120; g = 40; b = 5;
-  }
-  // Bottom cap
-  if (x >= cx - capW / 2 && x <= cx + capW / 2 && y >= lb - capH && y <= lb) {
-    r = 120; g = 40; b = 5;
-  }
-
-  return [r, g, b];
+  // Subtle per-brick tint: vary the red channel by ±10 so bricks look handmade
+  const col   = Math.floor((x + offset) / cellW);
+  const shift = ((row * 3 + col * 7) % 5) - 2; // range −2..+2
+  return [
+    Math.min(255, Math.max(0, 224 + shift * 5)), // R: ~204..244
+    Math.min(255, Math.max(0,  72 + shift * 2)), // G
+    10,                                           // B
+  ];
 }
 
 const outDir = path.join(__dirname, '..', 'public', 'icons');
 fs.mkdirSync(outDir, { recursive: true });
 
 for (const size of [192, 512]) {
-  const png = makePNG(size, drawIcon);
-  const outPath = path.join(outDir, `icon-${size}.png`);
-  fs.writeFileSync(outPath, png);
-  console.log(`Created ${outPath} (${png.length} bytes)`);
+  const png  = makePNG(size, drawBrickWall);
+  const dest = path.join(outDir, `icon-${size}.png`);
+  fs.writeFileSync(dest, png);
+  console.log(`icon-${size}.png  (${png.length} bytes)`);
 }
 
-// Also create a simple maskable icon (full-bleed orange)
-function drawMaskable(x, y, size) {
-  let r = 234, g = 88, b = 12;
-  const brickW = size / 6;
-  const brickH = size / 12;
-  const row = Math.floor(y / brickH);
-  const offsetX = (row % 2) * (brickW / 2);
-  const inBrickX = (x + offsetX) % brickW;
-  const inBrickY = y % brickH;
-  const lineThick = Math.max(1, size / 96);
-  if (inBrickX < lineThick || inBrickY < lineThick) {
-    r = 180; g = 60; b = 8;
-  }
-  return [r, g, b];
-}
-
-const maskable = makePNG(512, drawMaskable);
+// Maskable icon: same brick pattern full-bleed (Android safe zone = inner 80%)
+const maskable = makePNG(512, drawBrickWall);
 fs.writeFileSync(path.join(outDir, 'maskable-512.png'), maskable);
-console.log('Created maskable-512.png');
-
-console.log('Done! Icons generated in public/icons/');
+console.log('maskable-512.png  (full-bleed)');
+console.log('\nDone — icons written to public/icons/');
