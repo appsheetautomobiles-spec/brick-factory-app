@@ -2,6 +2,11 @@
 import { useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 const CATEGORIES = ['raw_materials', 'labor', 'utilities', 'maintenance', 'transport', 'other'];
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -23,7 +28,7 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
     category: 'raw_materials',
     amount: '',
     description: '',
-    expense_date: new Date().toISOString().split('T')[0],
+    expense_date: localToday(),
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -89,7 +94,7 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
       }]);
 
       if (error) throw error;
-      setFormData({ category: 'raw_materials', amount: '', description: '', expense_date: new Date().toISOString().split('T')[0] });
+      setFormData({ category: 'raw_materials', amount: '', description: '', expense_date: localToday() });
       removeImage();
       onExpenseAdded();
     } catch (error) {

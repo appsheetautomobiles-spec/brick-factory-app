@@ -19,6 +19,10 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
+function localDateStr(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function fmt(n: number): string {
   if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
   if (n >= 1000) return `₹${(n / 1000).toFixed(1)}k`;
@@ -61,9 +65,9 @@ export default function Dashboard() {
 
   const fetchStats = async () => {
     const now = new Date();
-    const yearStart = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    const today = now.toISOString().split('T')[0];
+    const yearStart = `${now.getFullYear()}-01-01`;
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const today = localDateStr(now);
 
     const [{ data }, { data: last }] = await Promise.all([
       supabase.from('expenses').select('amount, expense_date').gte('expense_date', yearStart),

@@ -70,17 +70,21 @@ function initials(name: string) {
   return name.split(' ').map(n => n[0] || '').join('').toUpperCase().slice(0, 2) || '??';
 }
 
+function localDateStr(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function formatDate(dateStr: string): string {
-  const today = new Date().toISOString().split('T')[0];
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  const today = localDateStr();
+  const yesterday = localDateStr(new Date(Date.now() - 86400000));
   if (dateStr === today) return 'Today';
   if (dateStr === yesterday) return 'Yesterday';
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
 function formatDateHeader(dateStr: string): string {
-  const today = new Date().toISOString().split('T')[0];
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  const today = localDateStr();
+  const yesterday = localDateStr(new Date(Date.now() - 86400000));
   if (dateStr === today) return 'Today';
   if (dateStr === yesterday) return 'Yesterday';
   const d = new Date(dateStr + 'T12:00:00');
@@ -151,9 +155,10 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
 
   // Filtered expenses based on search + date filter
   const filteredExpenses = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+    const now = new Date();
+    const today = localDateStr(now);
+    const weekAgo = localDateStr(new Date(Date.now() - 7 * 86400000));
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
     let result = expenses;
 
