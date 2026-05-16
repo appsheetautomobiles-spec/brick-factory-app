@@ -13,7 +13,7 @@ const categoryLabels: Record<string, string> = {
   other: 'Other',
 };
 
-export default function ExpenseForm({ factoryId, onExpenseAdded }: { factoryId: string; onExpenseAdded: () => void }) {
+export default function ExpenseForm({ onExpenseAdded }: { onExpenseAdded: () => void }) {
   const [formData, setFormData] = useState({
     category: 'raw_materials',
     amount: '',
@@ -31,7 +31,6 @@ export default function ExpenseForm({ factoryId, onExpenseAdded }: { factoryId: 
       if (!user) return;
 
       const { error } = await supabase.from('expenses').insert([{
-        factory_id: factoryId,
         user_id: user.id,
         category: formData.category,
         amount: parseFloat(formData.amount),

@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { getOrCreateProfile } from '@/lib/profile';
+import { ensureUserProfile } from '@/lib/profile';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import ExpenseForm from '@/components/ExpenseForm';
@@ -10,11 +10,10 @@ import ExpenseList from '@/components/ExpenseList';
 export default function Dashboard() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
-  const [factoryId, setFactoryId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [totalExpense, setTotalExpense] = useState(0);
   const [showForm, setShowForm] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const init = async () => {
@@ -24,31 +23,19 @@ export default function Dashboard() {
         return;
       }
       setUser(user);
-
-      try {
-        const profile = await getOrCreateProfile(
-          user.id,
-          user.email!,
-          user.user_metadata?.full_name
-        );
-        setFactoryId(profile.factoryId);
-        fetchTotalExpense(profile.factoryId);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Setup failed');
-      } finally {
-        setLoading(false);
-      }
+      await ensureUserProfile(user.id, user.email!, user.user_metadata?.full_name);
+      await fetchTotalExpense();
+      setLoading(false);
     };
 
     init();
   }, [router]);
 
-  const fetchTotalExpense = async (fid: string) => {
+  const fetchTotalExpense = async () => {
     try {
       const { data, error } = await supabase
         .from('expenses')
         .select('amount')
-        .eq('factory_id', fid)
         .gte('expense_date', new Date(new Date().getFullYear(), 0, 1).toISOString());
 
       if (error) throw error;
@@ -64,25 +51,7 @@ export default function Dashboard() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="text-5xl mb-3">🧱</div>
-          <p className="text-gray-500">Setting up your factory...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="bg-white rounded-2xl shadow p-6 w-full max-w-sm text-center">
-          <div className="text-4xl mb-3">⚠️</div>
-          <p className="text-red-600 font-medium mb-2">Setup failed</p>
-          <p className="text-gray-500 text-sm mb-4">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="w-full bg-blue-600 text-white py-3 rounded-xl font-medium"
-          >
-            Retry
-          </button>
+          <p className="text-gray-500">Loading...</p>
         </div>
       </div>
     );
@@ -107,17 +76,17 @@ export default function Dashboard() {
           {showForm ? '✕  Cancel' : '+ Add Expense'}
         </button>
 
-        {showForm && factoryId && (
+        {showForm && (
           <ExpenseForm
-            factoryId={factoryId}
             onExpenseAdded={() => {
-              fetchTotalExpense(factoryId);
+              fetchTotalExpense();
+              setRefreshKey(k => k + 1);
               setShowForm(false);
             }}
           />
         )}
 
-        {factoryId && <ExpenseList factoryId={factoryId} />}
+        <ExpenseList refreshKey={refreshKey} />
       </div>
     </div>
   );

@@ -20,30 +20,19 @@ const categoryColors: Record<string, string> = {
   other: 'bg-gray-100 text-gray-700',
 };
 
-export default function ExpenseList({ factoryId }: { factoryId: string }) {
+export default function ExpenseList({ refreshKey }: { refreshKey: number }) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchExpenses();
-    const subscription = supabase
-      .channel('expenses')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => {
-        fetchExpenses();
-      })
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [factoryId]);
+  }, [refreshKey]);
 
   const fetchExpenses = async () => {
     try {
       const { data, error } = await supabase
         .from('expenses')
         .select('*')
-        .eq('factory_id', factoryId)
         .order('expense_date', { ascending: false })
         .limit(50);
 
