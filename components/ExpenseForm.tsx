@@ -13,7 +13,7 @@ const categoryLabels: Record<string, string> = {
   other: 'Other',
 };
 
-export default function ExpenseForm({ onExpenseAdded }: { onExpenseAdded: () => void }) {
+export default function ExpenseForm({ factoryId, onExpenseAdded }: { factoryId: string; onExpenseAdded: () => void }) {
   const [formData, setFormData] = useState({
     category: 'raw_materials',
     amount: '',
@@ -30,16 +30,14 @@ export default function ExpenseForm({ onExpenseAdded }: { onExpenseAdded: () => 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { error } = await supabase.from('expenses').insert([
-        {
-          user_id: user.id,
-          factory_id: user.user_metadata?.factory_id || user.id,
-          category: formData.category,
-          amount: parseFloat(formData.amount),
-          description: formData.description,
-          expense_date: formData.expense_date,
-        },
-      ]);
+      const { error } = await supabase.from('expenses').insert([{
+        factory_id: factoryId,
+        user_id: user.id,
+        category: formData.category,
+        amount: parseFloat(formData.amount),
+        description: formData.description,
+        expense_date: formData.expense_date,
+      }]);
 
       if (error) throw error;
 

@@ -20,7 +20,7 @@ const categoryColors: Record<string, string> = {
   other: 'bg-gray-100 text-gray-700',
 };
 
-export default function ExpenseList() {
+export default function ExpenseList({ factoryId }: { factoryId: string }) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -36,13 +36,14 @@ export default function ExpenseList() {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [factoryId]);
 
   const fetchExpenses = async () => {
     try {
       const { data, error } = await supabase
         .from('expenses')
         .select('*')
+        .eq('factory_id', factoryId)
         .order('expense_date', { ascending: false })
         .limit(50);
 

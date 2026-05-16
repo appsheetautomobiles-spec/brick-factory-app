@@ -18,7 +18,7 @@ export default function Navigation({ user }: { user: any }) {
       <div className="max-w-2xl mx-auto px-4 py-3 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <span className="text-2xl">🧱</span>
-          <span className="font-bold text-gray-800 text-lg">Brick Factory</span>
+          <span className="font-bold text-gray-800 text-lg">Ittige Factory</span>
         </div>
         <div className="flex items-center gap-2">
           {avatarUrl && (
