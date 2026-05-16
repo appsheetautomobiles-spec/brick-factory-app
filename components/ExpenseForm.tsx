@@ -52,12 +52,18 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
     try {
       const fd = new FormData();
       fd.append('file', imageFile);
-      const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
-      if (!res.ok) throw new Error('Upload failed');
-      const { url } = await res.json();
-      return url as string;
-    } catch {
-      alert('Image upload failed. Expense will be saved without image.');
+      fd.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!);
+      fd.append('folder', 'ittige-factory');
+
+      const res = await fetch(
+        `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: 'POST', body: fd }
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message ?? 'Upload failed');
+      return json.secure_url as string;
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Image upload failed. Expense will be saved without image.');
       return null;
     } finally {
       setImageUploading(false);
