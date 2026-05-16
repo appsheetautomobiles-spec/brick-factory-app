@@ -11,6 +11,7 @@ export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [totalExpense, setTotalExpense] = useState(0);
+  const [showForm, setShowForm] = useState(false);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -42,31 +43,47 @@ export default function Dashboard() {
     }
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="text-5xl mb-3">🧱</div>
+          <p className="text-gray-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation user={user} />
-      
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-gray-600 text-sm font-medium">Total Expenses (This Year)</h3>
-            <p className="text-3xl font-bold text-blue-600 mt-2">
-              ${totalExpense.toFixed(2)}
-            </p>
-          </div>
+
+      <div className="max-w-2xl mx-auto px-4 py-5 space-y-4 pb-8">
+        {/* Stats card */}
+        <div className="bg-blue-600 rounded-2xl p-5 text-white">
+          <p className="text-blue-200 text-sm font-medium">Total Expenses (This Year)</p>
+          <p className="text-4xl font-bold mt-1">₹{totalExpense.toFixed(2)}</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1">
-            <ExpenseForm onExpenseAdded={fetchTotalExpense} />
-          </div>
-          <div className="lg:col-span-2">
-            <ExpenseList />
-          </div>
-        </div>
+        {/* Add Expense toggle */}
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="w-full bg-blue-600 text-white py-4 rounded-2xl font-semibold text-base active:scale-95 transition-transform"
+        >
+          {showForm ? '✕  Cancel' : '+ Add Expense'}
+        </button>
+
+        {showForm && (
+          <ExpenseForm
+            onExpenseAdded={() => {
+              fetchTotalExpense();
+              setShowForm(false);
+            }}
+          />
+        )}
+
+        <ExpenseList />
       </div>
     </div>
-  )
+  );
 }

@@ -11,6 +11,15 @@ interface Expense {
   created_at: string;
 }
 
+const categoryColors: Record<string, string> = {
+  raw_materials: 'bg-orange-100 text-orange-700',
+  labor: 'bg-purple-100 text-purple-700',
+  utilities: 'bg-yellow-100 text-yellow-700',
+  maintenance: 'bg-red-100 text-red-700',
+  transport: 'bg-green-100 text-green-700',
+  other: 'bg-gray-100 text-gray-700',
+};
+
 export default function ExpenseList() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +55,22 @@ export default function ExpenseList() {
     }
   };
 
-  if (loading) return <div className="bg-white rounded-lg shadow p-6">Loading expenses...</div>;
+  if (loading) {
+    return (
+      <div className="bg-white rounded-2xl shadow-sm p-6 text-center text-gray-400">
+        Loading expenses...
+      </div>
+    );
+  }
+
+  if (expenses.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl shadow-sm p-10 text-center text-gray-400">
+        <div className="text-4xl mb-2">📋</div>
+        <p>No expenses yet. Add your first one!</p>
+      </div>
+    );
+  }
 
   const totalByCategory = expenses.reduce((acc, exp) => {
     acc[exp.category] = (acc[exp.category] || 0) + exp.amount;
@@ -54,46 +78,45 @@ export default function ExpenseList() {
   }, {} as Record<string, number>);
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-xl font-bold mb-4">Recent Expenses</h2>
-
-      {/* Category Summary */}
-      <div className="mb-6 grid grid-cols-2 md:grid-cols-3 gap-3">
-        {Object.entries(totalByCategory).map(([category, amount]) => (
-          <div key={category} className="bg-blue-50 p-3 rounded-lg">
-            <p className="text-sm text-gray-600">{category.replace(/_/g, ' ').toUpperCase()}</p>
-            <p className="text-lg font-bold text-blue-600">${amount.toFixed(2)}</p>
-          </div>
-        ))}
+    <div className="space-y-4">
+      {/* Category summary */}
+      <div className="bg-white rounded-2xl shadow-sm p-4">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">By Category</h2>
+        <div className="grid grid-cols-2 gap-2">
+          {Object.entries(totalByCategory).map(([category, amount]) => (
+            <div key={category} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2.5">
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${categoryColors[category] || 'bg-gray-100 text-gray-700'}`}>
+                {category.replace(/_/g, ' ')}
+              </span>
+              <span className="text-sm font-bold text-gray-800">₹{amount.toFixed(0)}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Expense Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-100 border-b">
-            <tr>
-              <th className="px-4 py-2 text-left">Date</th>
-              <th className="px-4 py-2 text-left">Category</th>
-              <th className="px-4 py-2 text-left">Description</th>
-              <th className="px-4 py-2 text-right">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {expenses.map((expense) => (
-              <tr key={expense.id} className="border-b hover:bg-gray-50">
-                <td className="px-4 py-2">{new Date(expense.expense_date).toLocaleDateString()}</td>
-                <td className="px-4 py-2">{expense.category.replace(/_/g, ' ')}</td>
-                <td className="px-4 py-2">{expense.description}</td>
-                <td className="px-4 py-2 text-right font-semibold">${parseFloat(expense.amount.toString()).toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Expense cards */}
+      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide px-4 pt-4 mb-1">Recent Expenses</h2>
+        <div className="divide-y divide-gray-100">
+          {expenses.map((expense) => (
+            <div key={expense.id} className="px-4 py-3.5 flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${categoryColors[expense.category] || 'bg-gray-100 text-gray-700'}`}>
+                    {expense.category.replace(/_/g, ' ')}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-500 truncate">
+                  {expense.description || '—'} · {new Date(expense.expense_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                </p>
+              </div>
+              <span className="text-base font-bold text-gray-800 shrink-0">
+                ₹{parseFloat(expense.amount.toString()).toFixed(0)}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
-
-      {expenses.length === 0 && (
-        <div className="text-center py-8 text-gray-500">No expenses yet. Add your first expense!</div>
-      )}
     </div>
   );
 }
