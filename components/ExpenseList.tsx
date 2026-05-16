@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 type Tab = 'all' | 'category' | 'daily' | 'users';
@@ -110,6 +110,11 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [editForm, setEditForm] = useState<EditForm>({ category: '', amount: '', description: '', expense_date: '' });
   const [editLoading, setEditLoading] = useState(false);
+  const [editImageUrl, setEditImageUrl] = useState<string | null>(null);
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const [editImagePreview, setEditImagePreview] = useState<string | null>(null);
+  const [editImageUploading, setEditImageUploading] = useState(false);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   useEffect(() => { fetchExpenses(); }, [refreshKey]);
@@ -122,6 +127,9 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
         description: editingExpense.description || '',
         expense_date: editingExpense.expense_date,
       });
+      setEditImageUrl(editingExpense.image_url ?? null);
+      setEditImageFile(null);
+      setEditImagePreview(null);
     }
   }, [editingExpense]);
 
@@ -165,10 +173,24 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
     return result;
   }, [expenses, search, dateFilter]);
 
+  const deleteCloudinaryImage = async (imageUrl: string) => {
+    try {
+      await fetch('/api/delete-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl }),
+      });
+    } catch {
+      // Non-critical — expense is already deleted from DB
+    }
+  };
+
   const handleDelete = async (id: string) => {
     setDeleteLoading(true);
+    const expense = expenses.find(e => e.id === id);
     const { error } = await supabase.from('expenses').delete().eq('id', id);
     if (!error) {
+      if (expense?.image_url) await deleteCloudinaryImage(expense.image_url);
       setExpenses(prev => prev.filter(e => e.id !== id));
       onStatsChange();
     }
@@ -177,17 +199,50 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
     setSelectedExpense(null);
   };
 
+  const uploadEditImage = async (): Promise<string | null> => {
+    if (!editImageFile) return null;
+    setEditImageUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', editImageFile);
+      fd.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!);
+      fd.append('folder', 'ittige-factory');
+      const res = await fetch(
+        `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: 'POST', body: fd }
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message ?? 'Upload failed');
+      return json.secure_url as string;
+    } catch {
+      alert('Image upload failed.');
+      return null;
+    } finally {
+      setEditImageUploading(false);
+    }
+  };
+
   const handleUpdate = async () => {
     if (!editingExpense) return;
     setEditLoading(true);
+
+    let finalImageUrl = editImageUrl;
+    if (editImageFile) finalImageUrl = await uploadEditImage();
+
+    const originalImageUrl = editingExpense.image_url;
     const { error } = await supabase.from('expenses').update({
       category: editForm.category,
       amount: parseFloat(editForm.amount),
       description: editForm.description,
       expense_date: editForm.expense_date,
+      image_url: finalImageUrl,
     }).eq('id', editingExpense.id);
 
     if (!error) {
+      // Delete old Cloudinary image if it was replaced or removed
+      if (originalImageUrl && originalImageUrl !== finalImageUrl) {
+        await deleteCloudinaryImage(originalImageUrl);
+      }
       await fetchExpenses();
       onStatsChange();
       setEditingExpense(null);
@@ -595,6 +650,66 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                 />
               </div>
 
+              {/* Image section */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Receipt / Photo</label>
+
+                {editImagePreview ? (
+                  <div className="relative">
+                    <img src={editImagePreview} alt="New preview" className="w-full h-40 object-cover rounded-xl border border-gray-200 dark:border-gray-600" />
+                    <button
+                      type="button"
+                      onClick={() => { setEditImageFile(null); setEditImagePreview(null); }}
+                      className="absolute top-2 right-2 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center text-white text-sm font-bold shadow"
+                    >×</button>
+                  </div>
+                ) : editImageUrl ? (
+                  <div>
+                    <div className="relative">
+                      <img src={editImageUrl} alt="Current receipt" className="w-full h-40 object-cover rounded-xl border border-gray-200 dark:border-gray-600" />
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => editFileInputRef.current?.click()}
+                        className="flex-1 py-2 rounded-xl text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 active:scale-95 transition-all"
+                      >Change photo</button>
+                      <button
+                        type="button"
+                        onClick={() => setEditImageUrl(null)}
+                        className="flex-1 py-2 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 active:scale-95 transition-all"
+                      >Remove photo</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => editFileInputRef.current?.click()}
+                    className="w-full py-4 border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-xl text-gray-400 dark:text-gray-500 text-sm font-medium hover:border-orange-500 hover:text-orange-500 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+                    </svg>
+                    Attach photo
+                  </button>
+                )}
+
+                <input
+                  ref={editFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setEditImageFile(file);
+                    const reader = new FileReader();
+                    reader.onload = ev => setEditImagePreview(ev.target?.result as string);
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </div>
+
               <div className="flex gap-3 pt-1">
                 <button
                   onClick={() => setEditingExpense(null)}
@@ -604,10 +719,10 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                 </button>
                 <button
                   onClick={handleUpdate}
-                  disabled={editLoading}
+                  disabled={editLoading || editImageUploading}
                   className="flex-1 bg-orange-600 text-white py-4 rounded-xl font-semibold active:scale-95 transition-all disabled:opacity-50"
                 >
-                  {editLoading ? 'Saving...' : 'Save Changes'}
+                  {editImageUploading ? 'Uploading...' : editLoading ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </div>
