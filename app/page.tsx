@@ -1,15 +1,15 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function LoginPage() {
+function LoginContent() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const accessDenied = searchParams.get('error') === 'access_denied';
 
   useEffect(() => {
-    // Handle the case where Supabase redirects back here with ?code= instead of /auth/callback
-    // (happens when callback URL isn't whitelisted in Supabase dashboard yet)
     const code = new URLSearchParams(window.location.search).get('code');
     if (code) {
       supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
@@ -18,12 +18,10 @@ export default function LoginPage() {
       return;
     }
 
-    // Redirect if already logged in
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) router.replace('/dashboard');
     });
 
-    // Catch any auth state change (e.g. implicit flow returning access_token in hash)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) router.replace('/dashboard');
     });
@@ -54,6 +52,13 @@ export default function LoginPage() {
           <p className="text-gray-400 text-sm mt-1">Expense Tracker</p>
         </div>
 
+        {accessDenied && (
+          <div className="mb-5 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-center">
+            <p className="text-red-600 text-sm font-semibold">Access denied</p>
+            <p className="text-red-400 text-xs mt-0.5">Your account is not authorized to use this app.</p>
+          </div>
+        )}
+
         <button
           onClick={handleGoogleLogin}
           disabled={loading}
@@ -73,5 +78,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginContent />
+    </Suspense>
   );
 }

@@ -55,6 +55,20 @@ export default function Dashboard() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push('/'); return; }
+
+      // Check allowlist
+      const { data: allowed } = await supabase
+        .from('allowed_emails')
+        .select('email')
+        .eq('email', user.email)
+        .single();
+
+      if (!allowed) {
+        await supabase.auth.signOut();
+        router.replace('/?error=access_denied');
+        return;
+      }
+
       setUser(user);
       await ensureUserProfile(user.id, user.email!, user.user_metadata?.full_name);
       await fetchStats();
