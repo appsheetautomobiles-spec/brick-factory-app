@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 type Tab = 'all' | 'category' | 'daily' | 'users' | 'pending';
-type DateFilter = 'all' | 'today' | 'week' | 'month';
+type DateFilter = 'all' | 'today' | 'week' | 'month' | 'custom';
 
 interface Category { id: string; name: string }
 interface Subcategory { id: string; category_id: string; name: string }
@@ -32,7 +32,7 @@ interface Payment {
   payment_date: string;
   note?: string | null;
   created_at: string;
-  payer?: { full_name: string | null; email: string | null } | null;
+  payerName?: string;
 }
 
 interface EditForm { amount: string; description: string; expense_date: string }
@@ -86,7 +86,7 @@ function formatDateHeader(s: string): string {
 }
 function fmt(n: number) { return '₹' + new Intl.NumberFormat('en-IN').format(Math.round(n)); }
 
-const DATE_FILTER_LABELS: Record<DateFilter, string> = { all: 'All time', today: 'Today', week: 'This week', month: 'This month' };
+const DATE_FILTER_LABELS: Record<DateFilter, string> = { all: 'All time', today: 'Today', week: 'This week', month: 'This month', custom: 'Custom' };
 const SEL_CLS = "w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700 text-sm font-medium appearance-none pr-8";
 
 const STATUS_BADGE: Record<string, string> = {
@@ -106,6 +106,8 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
   const [activeTab, setActiveTab] = useState<Tab>('all');
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState(localDateStr());
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -147,11 +149,13 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
       setConfirmDeletePaymentId(null);
       return;
     }
-    supabase.from('payments')
-      .select('*, payer:users!user_id(full_name, email)')
-      .eq('expense_id', selectedExpense.id)
-      .order('payment_date', { ascending: false })
-      .then(({ data }) => setPaymentHistory((data || []) as unknown as Payment[]));
+    Promise.all([
+      supabase.from('payments').select('*').eq('expense_id', selectedExpense.id).order('payment_date', { ascending: false }),
+      supabase.from('users').select('id, full_name, email'),
+    ]).then(([{ data: payments }, { data: users }]) => {
+      const usersMap = Object.fromEntries((users || []).map(u => [u.id, u.full_name || u.email?.split('@')[0] || 'Unknown']));
+      setPaymentHistory((payments || []).map(p => ({ ...p, payerName: usersMap[p.user_id] || 'Unknown' })));
+    });
   }, [selectedExpense]);
 
   useEffect(() => {
@@ -235,7 +239,12 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
       setNewPaymentNote('');
       setNewPaymentDate(localDateStr());
       setShowPaymentForm(false);
-      const { data } = await supabase.from('payments').select('*, payer:users!user_id(full_name, email)').eq('expense_id', selectedExpense.id).order('payment_date', { ascending: false });
+      const [{ data: payments }, { data: users }] = await Promise.all([
+        supabase.from('payments').select('*').eq('expense_id', selectedExpense.id).order('payment_date', { ascending: false }),
+        supabase.from('users').select('id, full_name, email'),
+      ]);
+      const usersMap = Object.fromEntries((users || []).map(u => [u.id, u.full_name || u.email?.split('@')[0] || 'Unknown']));
+      const data = (payments || []).map(p => ({ ...p, payerName: usersMap[p.user_id] || 'Unknown' }));
       setPaymentHistory(data || []);
       onStatsChange();
     }
@@ -271,6 +280,10 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
     if (dateFilter === 'today') result = result.filter(e => e.expense_date === today);
     else if (dateFilter === 'week') result = result.filter(e => e.expense_date >= weekAgo);
     else if (dateFilter === 'month') result = result.filter(e => e.expense_date >= monthStart);
+    else if (dateFilter === 'custom') {
+      if (customFrom) result = result.filter(e => e.expense_date >= customFrom);
+      if (customTo) result = result.filter(e => e.expense_date <= customTo);
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(e =>
@@ -281,7 +294,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
       );
     }
     return result;
-  }, [expenses, search, dateFilter]);
+  }, [expenses, search, dateFilter, customFrom, customTo]);
 
   const pendingExpenses = useMemo(() =>
     filteredExpenses
@@ -433,6 +446,27 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
           >{DATE_FILTER_LABELS[f]}</button>
         ))}
       </div>
+
+      {/* Custom date range inputs */}
+      {dateFilter === 'custom' && (
+        <div className="flex gap-2 items-center bg-white dark:bg-gray-800 rounded-2xl shadow-sm px-4 py-3">
+          <div className="flex-1">
+            <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-1">From</p>
+            <input
+              type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+              className="w-full text-sm text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 focus:outline-none focus:border-orange-500"
+            />
+          </div>
+          <div className="text-gray-300 dark:text-gray-600 mt-4">→</div>
+          <div className="flex-1">
+            <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-1">To</p>
+            <input
+              type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+              className="w-full text-sm text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 focus:outline-none focus:border-orange-500"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Empty state */}
       {filteredExpenses.length === 0 && (
@@ -757,9 +791,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                               <div key={p.id} className="flex items-center gap-2 text-xs bg-white dark:bg-gray-800 rounded-xl px-3 py-2">
                                 <div className="flex-1 min-w-0">
                                   <span className="font-semibold text-gray-700 dark:text-gray-200">{fmt(p.amount)}</span>
-                                  <span className="text-gray-400 dark:text-gray-500 ml-2">
-                                    {p.payer?.full_name || p.payer?.email?.split('@')[0] || 'Unknown'}
-                                  </span>
+                                  <span className="text-gray-400 dark:text-gray-500 ml-2">{p.payerName}</span>
                                   {p.note && <span className="text-gray-300 dark:text-gray-600 ml-1">· {p.note}</span>}
                                 </div>
                                 <span className="text-gray-400 dark:text-gray-500 shrink-0">{formatDate(p.payment_date)}</span>
