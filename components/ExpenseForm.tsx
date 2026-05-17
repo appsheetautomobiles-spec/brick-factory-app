@@ -262,7 +262,7 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
             type="date"
             value={formData.expense_date}
             onChange={e => setFormData({ ...formData, expense_date: e.target.value })}
-            className="w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-800 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700"
+            className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700"
           />
         </div>
 

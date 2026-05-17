@@ -108,6 +108,9 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState(localDateStr());
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [sortBy, setSortBy] = useState<'date' | 'amount'>('date');
+  const [displayLimit, setDisplayLimit] = useState(50);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -194,7 +197,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
           .select('*, category:categories!category_id(id, name), subcategory:subcategories!subcategory_id(id, name)')
           .order('expense_date', { ascending: false })
           .order('created_at', { ascending: false })
-          .limit(200),
+          .limit(500),
         supabase.from('users').select('id, full_name, email'),
       ]);
       const usersMap = Object.fromEntries((usersData || []).map(u => [u.id, { name: u.full_name || u.email?.split('@')[0] || 'Unknown' }]));
@@ -284,6 +287,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
       if (customFrom) result = result.filter(e => e.expense_date >= customFrom);
       if (customTo) result = result.filter(e => e.expense_date <= customTo);
     }
+    if (categoryFilter) result = result.filter(e => getCategoryName(e) === categoryFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(e =>
@@ -293,8 +297,9 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
         e.userName?.toLowerCase().includes(q)
       );
     }
+    if (sortBy === 'amount') result = [...result].sort((a, b) => Number(b.amount) - Number(a.amount));
     return result;
-  }, [expenses, search, dateFilter, customFrom, customTo]);
+  }, [expenses, search, dateFilter, customFrom, customTo, categoryFilter, sortBy]);
 
   const pendingExpenses = useMemo(() =>
     filteredExpenses
@@ -302,6 +307,14 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
       .sort((a, b) => getPendingAmount(b) - getPendingAmount(a)),
     [filteredExpenses]
   );
+
+  const allCategories = useMemo(() => {
+    const seen = new Set<string>();
+    expenses.forEach(e => { const n = getCategoryName(e); if (n !== 'Unknown') seen.add(n); });
+    return Array.from(seen).sort();
+  }, [expenses]);
+
+  useEffect(() => { setDisplayLimit(50); }, [search, dateFilter, customFrom, customTo, categoryFilter, sortBy]);
 
   const deleteCloudinaryImage = async (imageUrl: string) => {
     try {
@@ -404,11 +417,12 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
   }, [filteredExpenses]);
 
   const byUser = useMemo(() => {
-    const acc: Record<string, { name: string; total: number; count: number }> = {};
+    const acc: Record<string, { name: string; total: number; count: number; pending: number }> = {};
     filteredExpenses.forEach(e => {
-      if (!acc[e.user_id]) acc[e.user_id] = { name: e.userName || 'Unknown', total: 0, count: 0 };
+      if (!acc[e.user_id]) acc[e.user_id] = { name: e.userName || 'Unknown', total: 0, count: 0, pending: 0 };
       acc[e.user_id].total += Number(e.amount);
       acc[e.user_id].count++;
+      acc[e.user_id].pending += getPendingAmount(e);
     });
     return Object.entries(acc).sort((a, b) => b[1].total - a[1].total);
   }, [filteredExpenses]);
@@ -421,7 +435,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
     { id: 'users', label: 'Users' },
   ];
 
-  const isFiltering = search.trim() !== '' || dateFilter !== 'all';
+  const isFiltering = search.trim() !== '' || dateFilter !== 'all' || categoryFilter !== '';
 
   if (loading) return <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-8 text-center text-gray-400 text-sm">Loading...</div>;
 
@@ -449,22 +463,35 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
 
       {/* Custom date range inputs */}
       {dateFilter === 'custom' && (
-        <div className="flex gap-2 items-center bg-white dark:bg-gray-800 rounded-2xl shadow-sm px-4 py-3">
-          <div className="flex-1">
+        <div className="grid grid-cols-2 gap-2 bg-white dark:bg-gray-800 rounded-2xl shadow-sm px-3 py-3">
+          <div className="min-w-0">
             <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-1">From</p>
             <input
               type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-              className="w-full text-sm text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 focus:outline-none focus:border-orange-500"
+              className="w-full text-sm text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2 focus:outline-none focus:border-orange-500"
             />
           </div>
-          <div className="text-gray-300 dark:text-gray-600 mt-4">→</div>
-          <div className="flex-1">
+          <div className="min-w-0">
             <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-1">To</p>
             <input
               type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-              className="w-full text-sm text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 focus:outline-none focus:border-orange-500"
+              className="w-full text-sm text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2 focus:outline-none focus:border-orange-500"
             />
           </div>
+        </div>
+      )}
+
+      {/* Category filter pills */}
+      {allCategories.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-0.5 no-scrollbar">
+          <button onClick={() => setCategoryFilter('')}
+            className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${!categoryFilter ? 'bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700'}`}
+          >All</button>
+          {allCategories.map(cat => (
+            <button key={cat} onClick={() => setCategoryFilter(cat === categoryFilter ? '' : cat)}
+              className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${categoryFilter === cat ? catColor(cat) : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-700'}`}
+            >{cat}</button>
+          ))}
         </div>
       )}
 
@@ -493,10 +520,16 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-700 flex justify-between items-center">
                 <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">{filteredExpenses.length} expenses</span>
-                <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{fmt(grandTotal)}</span>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setSortBy(s => s === 'date' ? 'amount' : 'date')}
+                    className="text-xs font-semibold text-orange-600 dark:text-orange-400 flex items-center gap-1 bg-orange-50 dark:bg-orange-900/20 px-2.5 py-1 rounded-lg">
+                    {sortBy === 'date' ? '↓ Date' : '↓ Amount'}
+                  </button>
+                  <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{fmt(grandTotal)}</span>
+                </div>
               </div>
               <div className="divide-y divide-gray-50 dark:divide-gray-700">
-                {filteredExpenses.map(expense => {
+                {filteredExpenses.slice(0, displayLimit).map(expense => {
                   const catName = getCategoryName(expense);
                   const subName = getSubcategoryName(expense);
                   const status = getPaymentStatus(expense);
@@ -524,6 +557,12 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                   );
                 })}
               </div>
+              {displayLimit < filteredExpenses.length && (
+                <button onClick={() => setDisplayLimit(l => l + 50)}
+                  className="w-full py-3.5 text-sm font-semibold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors">
+                  Load more · {filteredExpenses.length - displayLimit} remaining
+                </button>
+              )}
             </div>
           )}
 
@@ -711,7 +750,10 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                           <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{info.name}</p>
                           <p className="text-xs text-gray-400 dark:text-gray-500">{info.count} {info.count === 1 ? 'expense' : 'expenses'}</p>
                         </div>
-                        <span className="text-base font-bold text-gray-900 dark:text-gray-100 shrink-0">{fmt(info.total)}</span>
+                        <div className="text-right shrink-0">
+                          <p className="text-base font-bold text-gray-900 dark:text-gray-100">{fmt(info.total)}</p>
+                          {info.pending > 0 && <p className="text-xs font-semibold text-red-500 dark:text-red-400">{fmt(info.pending)} pending</p>}
+                        </div>
                       </div>
                       <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden ml-12">
                         <div className={`h-full rounded-full ${avatarColor(userId)} opacity-70 transition-all duration-500`} style={{ width: `${pct}%` }} />
@@ -969,7 +1011,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
               <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Date</label>
                 <input type="date" value={editForm.expense_date} onChange={e => setEditForm({ ...editForm, expense_date: e.target.value })}
-                  className="w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-800 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700" />
+                  className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700" />
               </div>
 
               <div>
