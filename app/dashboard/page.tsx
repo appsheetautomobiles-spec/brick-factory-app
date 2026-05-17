@@ -9,8 +9,8 @@ import ExpenseList from '@/components/ExpenseList';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import BottomNav from '@/components/BottomNav';
 
-interface Stats { year: number; month: number; today: number }
-interface LastEntry { amount: number; created_at: string; category?: { name: string }[] | null; subcategory?: { name: string }[] | null }
+interface Stats { year: number; month: number; today: number; pending: number }
+interface LastEntry { amount: number; created_at: string; category?: { name: string } | null; subcategory?: { name: string } | null }
 
 
 function localDateStr(d = new Date()): string {
@@ -40,7 +40,7 @@ export default function Dashboard() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<Stats>({ year: 0, month: 0, today: 0 });
+  const [stats, setStats] = useState<Stats>({ year: 0, month: 0, today: 0, pending: 0 });
   const [lastEntry, setLastEntry] = useState<LastEntry | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -77,19 +77,21 @@ export default function Dashboard() {
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
     const today = localDateStr(now);
 
-    const [{ data }, { data: last }] = await Promise.all([
-      supabase.from('expenses').select('amount, expense_date').gte('expense_date', yearStart),
+    const [{ data: allData }, { data: last }] = await Promise.all([
+      supabase.from('expenses').select('amount, expense_date, paid_amount'),
       supabase.from('expenses').select('amount, created_at, category:categories!category_id(name), subcategory:subcategories!subcategory_id(name)').order('created_at', { ascending: false }).limit(1).single(),
     ]);
 
-    if (data) {
+    if (allData) {
+      const yearData = allData.filter(e => e.expense_date >= yearStart);
       setStats({
-        year: data.reduce((s, e) => s + Number(e.amount), 0),
-        month: data.filter(e => e.expense_date >= monthStart).reduce((s, e) => s + Number(e.amount), 0),
-        today: data.filter(e => e.expense_date === today).reduce((s, e) => s + Number(e.amount), 0),
+        year: yearData.reduce((s, e) => s + Number(e.amount), 0),
+        month: yearData.filter(e => e.expense_date >= monthStart).reduce((s, e) => s + Number(e.amount), 0),
+        today: yearData.filter(e => e.expense_date === today).reduce((s, e) => s + Number(e.amount), 0),
+        pending: allData.reduce((s, e) => s + Math.max(0, Number(e.amount) - Number(e.paid_amount || 0)), 0),
       });
     }
-    if (last) setLastEntry(last as LastEntry);
+    if (last) setLastEntry(last as unknown as LastEntry);
   };
 
   const handleRefresh = async () => {
@@ -147,7 +149,7 @@ export default function Dashboard() {
           </h1>
           {lastEntry ? (
             <p className="text-orange-200 text-sm mt-1.5 font-medium">
-              Last entry: {lastEntry.category?.[0]?.name ?? 'Unknown'}{lastEntry.subcategory?.[0]?.name ? ` · ${lastEntry.subcategory[0].name}` : ''} · {fmt(lastEntry.amount)} · {timeAgo(lastEntry.created_at)}
+              Last entry: {lastEntry.category?.name ?? 'Unknown'}{lastEntry.subcategory?.name ? ` · ${lastEntry.subcategory.name}` : ''} · {fmt(lastEntry.amount)} · {timeAgo(lastEntry.created_at)}
             </p>
           ) : (
             <p className="text-orange-200 text-sm mt-1.5 font-medium">No expenses logged yet</p>
@@ -163,6 +165,17 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+
+          {/* Pending card */}
+          {stats.pending > 0 && (
+            <div className="mt-2.5 bg-red-500/25 border border-red-400/30 backdrop-blur-sm rounded-2xl p-3.5 flex items-center justify-between">
+              <div>
+                <p className="text-red-200 text-xs font-semibold uppercase tracking-wide">⚠️ Pending Payments</p>
+                <p className="text-white text-xl font-bold mt-0.5">{fmt(stats.pending)}</p>
+              </div>
+              <p className="text-red-200 text-xs font-medium text-right">outstanding<br/>balance</p>
+            </div>
+          )}
         </div>
       </div>
 

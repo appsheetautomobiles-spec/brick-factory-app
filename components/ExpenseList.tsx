@@ -2,7 +2,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
-type Tab = 'all' | 'category' | 'daily' | 'users';
+type Tab = 'all' | 'category' | 'daily' | 'users' | 'pending';
 type DateFilter = 'all' | 'today' | 'week' | 'month';
 
 interface Category { id: string; name: string }
@@ -16,6 +16,7 @@ interface Expense {
   subcategory_id?: string | null;
   subcategory?: { id: string; name: string } | null;
   amount: number;
+  paid_amount: number;
   description: string;
   expense_date: string;
   created_at: string;
@@ -23,11 +24,20 @@ interface Expense {
   userName?: string;
 }
 
+interface Payment {
+  id: string;
+  expense_id: string;
+  user_id: string;
+  amount: number;
+  payment_date: string;
+  note?: string | null;
+  created_at: string;
+}
+
 interface EditForm { amount: string; description: string; expense_date: string }
 
 interface Props { refreshKey: number; currentUserId: string; onStatsChange: () => void }
 
-// Dynamic color palette — hashed by category name so same category always gets same color
 const CAT_COLORS = [
   'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300',
   'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300',
@@ -46,6 +56,13 @@ function catBar(name: string) { return CAT_BAR[hashIdx(name)]; }
 
 function getCategoryName(e: Expense): string { return e.category?.name || 'Unknown'; }
 function getSubcategoryName(e: Expense): string | null { return e.subcategory?.name || null; }
+function getPendingAmount(e: Expense): number { return Math.max(0, Number(e.amount) - Number(e.paid_amount || 0)); }
+function getPaymentStatus(e: Expense): 'paid' | 'partial' | 'unpaid' {
+  const paid = Number(e.paid_amount || 0);
+  if (paid >= Number(e.amount)) return 'paid';
+  if (paid > 0) return 'partial';
+  return 'unpaid';
+}
 
 const AVATAR_COLORS = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500'];
 function avatarColor(id: string) { return AVATAR_COLORS[id.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR_COLORS.length]; }
@@ -69,8 +86,18 @@ function formatDateHeader(s: string): string {
 function fmt(n: number) { return '₹' + new Intl.NumberFormat('en-IN').format(Math.round(n)); }
 
 const DATE_FILTER_LABELS: Record<DateFilter, string> = { all: 'All time', today: 'Today', week: 'This week', month: 'This month' };
-
 const SEL_CLS = "w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700 text-sm font-medium appearance-none pr-8";
+
+const STATUS_BADGE: Record<string, string> = {
+  paid: 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300',
+  partial: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300',
+  unpaid: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300',
+};
+const STATUS_DOT: Record<string, string> = {
+  paid: 'bg-green-500',
+  partial: 'bg-amber-500',
+  unpaid: 'bg-red-500',
+};
 
 export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }: Props) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -96,10 +123,32 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
+  // Payment state
+  const [paymentHistory, setPaymentHistory] = useState<Payment[]>([]);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [newPaymentAmount, setNewPaymentAmount] = useState('');
+  const [newPaymentDate, setNewPaymentDate] = useState(localDateStr());
+  const [newPaymentNote, setNewPaymentNote] = useState('');
+  const [paymentSaving, setPaymentSaving] = useState(false);
+
   useEffect(() => { fetchExpenses(); }, [refreshKey]);
 
-  // Keep ref in sync so the editCategoryId effect can read current subcategoryId without a dep loop
   useEffect(() => { editSubcategoryIdRef.current = editSubcategoryId; }, [editSubcategoryId]);
+
+  useEffect(() => {
+    if (!selectedExpense) {
+      setPaymentHistory([]);
+      setShowPaymentForm(false);
+      setNewPaymentAmount('');
+      setNewPaymentNote('');
+      return;
+    }
+    supabase.from('payments')
+      .select('*')
+      .eq('expense_id', selectedExpense.id)
+      .order('payment_date', { ascending: false })
+      .then(({ data }) => setPaymentHistory(data || []));
+  }, [selectedExpense]);
 
   useEffect(() => {
     if (!editingExpense) return;
@@ -149,6 +198,46 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
     }
   };
 
+  const handleAddPayment = async () => {
+    if (!selectedExpense || !newPaymentAmount) return;
+    setPaymentSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setPaymentSaving(false); return; }
+
+    const payAmt = parseFloat(newPaymentAmount);
+    const currentPaid = Number(selectedExpense.paid_amount || 0);
+    const maxPayable = Number(selectedExpense.amount) - currentPaid;
+    const actualPay = Math.min(payAmt, maxPayable);
+    const newPaid = currentPaid + actualPay;
+
+    const [{ error: paymentError }, { error: updateError }] = await Promise.all([
+      supabase.from('payments').insert({
+        expense_id: selectedExpense.id,
+        user_id: user.id,
+        amount: actualPay,
+        payment_date: newPaymentDate,
+        note: newPaymentNote || null,
+      }),
+      supabase.from('expenses').update({ paid_amount: newPaid }).eq('id', selectedExpense.id),
+    ]);
+
+    if (paymentError || updateError) {
+      alert((paymentError || updateError)?.message);
+    } else {
+      const updated = { ...selectedExpense, paid_amount: newPaid };
+      setExpenses(prev => prev.map(e => e.id === selectedExpense.id ? updated : e));
+      setSelectedExpense(updated);
+      setNewPaymentAmount('');
+      setNewPaymentNote('');
+      setNewPaymentDate(localDateStr());
+      setShowPaymentForm(false);
+      const { data } = await supabase.from('payments').select('*').eq('expense_id', selectedExpense.id).order('payment_date', { ascending: false });
+      setPaymentHistory(data || []);
+      onStatsChange();
+    }
+    setPaymentSaving(false);
+  };
+
   const filteredExpenses = useMemo(() => {
     const now = new Date();
     const today = localDateStr(now);
@@ -169,6 +258,13 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
     }
     return result;
   }, [expenses, search, dateFilter]);
+
+  const pendingExpenses = useMemo(() =>
+    filteredExpenses
+      .filter(e => getPendingAmount(e) > 0)
+      .sort((a, b) => getPendingAmount(b) - getPendingAmount(a)),
+    [filteredExpenses]
+  );
 
   const deleteCloudinaryImage = async (imageUrl: string) => {
     try {
@@ -239,6 +335,16 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
     return Object.entries(acc).sort((a, b) => b[1] - a[1]);
   }, [filteredExpenses]);
 
+  const categoryPendingTotals = useMemo(() => {
+    const acc: Record<string, number> = {};
+    filteredExpenses.forEach(e => {
+      const k = getCategoryName(e);
+      const pending = getPendingAmount(e);
+      if (pending > 0) acc[k] = (acc[k] || 0) + pending;
+    });
+    return acc;
+  }, [filteredExpenses]);
+
   const subcategoryTotals = useMemo(() => {
     const acc: Record<string, Record<string, number>> = {};
     filteredExpenses.forEach(e => {
@@ -249,6 +355,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
   }, [filteredExpenses]);
 
   const grandTotal = useMemo(() => filteredExpenses.reduce((s, e) => s + Number(e.amount), 0), [filteredExpenses]);
+  const grandPending = useMemo(() => filteredExpenses.reduce((s, e) => s + getPendingAmount(e), 0), [filteredExpenses]);
 
   const byDate = useMemo(() => {
     const acc: Record<string, Expense[]> = {};
@@ -268,6 +375,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'all', label: 'All' },
+    { id: 'pending', label: `Pending${pendingExpenses.length ? ` (${pendingExpenses.length})` : ''}` },
     { id: 'category', label: 'Category' },
     { id: 'daily', label: 'Daily' },
     { id: 'users', label: 'Users' },
@@ -310,11 +418,11 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
 
       {filteredExpenses.length > 0 && (
         <>
-          {/* Tabs */}
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-1.5 flex gap-1">
+          {/* Tabs — scrollable on small screens */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-1.5 flex gap-1 overflow-x-auto no-scrollbar">
             {TABS.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${activeTab === tab.id ? 'bg-orange-600 text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                className={`shrink-0 flex-1 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-orange-600 text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
               >{tab.label}</button>
             ))}
           </div>
@@ -330,6 +438,8 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                 {filteredExpenses.map(expense => {
                   const catName = getCategoryName(expense);
                   const subName = getSubcategoryName(expense);
+                  const status = getPaymentStatus(expense);
+                  const pendingAmt = getPendingAmount(expense);
                   return (
                     <div key={expense.id} className="px-4 py-3.5 flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 active:bg-gray-100 dark:active:bg-gray-700 transition-colors" onClick={() => setSelectedExpense(expense)}>
                       {expense.image_url && <img src={expense.image_url} alt="receipt" className="w-10 h-10 rounded-lg object-cover border border-gray-200 dark:border-gray-600 shrink-0" />}
@@ -341,8 +451,13 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                         <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{expense.description || '—'} · {formatDate(expense.expense_date)} · {expense.userName}</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-base font-bold text-gray-900 dark:text-gray-100">{fmt(expense.amount)}</span>
-                        <svg className="text-gray-300 dark:text-gray-600" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                        <div className="text-right">
+                          <span className="text-base font-bold text-gray-900 dark:text-gray-100">{fmt(expense.amount)}</span>
+                          {pendingAmt > 0 && (
+                            <p className="text-xs font-semibold text-red-500 dark:text-red-400">{fmt(pendingAmt)} due</p>
+                          )}
+                        </div>
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[status]}`} />
                       </div>
                     </div>
                   );
@@ -351,16 +466,94 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
             </div>
           )}
 
+          {/* PENDING TAB */}
+          {activeTab === 'pending' && (
+            <div className="space-y-3">
+              {pendingExpenses.length === 0 ? (
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-12 text-center">
+                  <div className="text-5xl mb-3">✅</div>
+                  <p className="text-gray-500 dark:text-gray-300 font-medium">All caught up!</p>
+                  <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">No pending payments</p>
+                </div>
+              ) : (
+                <>
+                  {/* Summary */}
+                  <div className="bg-red-50 dark:bg-red-900/20 rounded-2xl p-4 border border-red-100 dark:border-red-800">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide">{pendingExpenses.length} with pending payments</p>
+                        <p className="text-2xl font-bold text-red-700 dark:text-red-300 mt-1">{fmt(grandPending)}</p>
+                        <p className="text-xs text-red-400 dark:text-red-500 mt-0.5">total outstanding</p>
+                      </div>
+                      <span className="text-3xl">⏳</span>
+                    </div>
+                  </div>
+
+                  {/* Category-wise pending */}
+                  {Object.keys(categoryPendingTotals).length > 1 && (
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4">
+                      <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-3">By Category</p>
+                      <div className="space-y-2">
+                        {Object.entries(categoryPendingTotals).sort((a, b) => b[1] - a[1]).map(([cat, amt]) => (
+                          <div key={cat} className="flex items-center justify-between">
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${catColor(cat)}`}>{cat}</span>
+                            <span className="text-sm font-bold text-red-600 dark:text-red-400">{fmt(amt)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Expense list */}
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="divide-y divide-gray-50 dark:divide-gray-700">
+                      {pendingExpenses.map(expense => {
+                        const catName = getCategoryName(expense);
+                        const subName = getSubcategoryName(expense);
+                        const pendingAmt = getPendingAmount(expense);
+                        const paidAmt = Number(expense.paid_amount || 0);
+                        const isPartial = paidAmt > 0;
+                        return (
+                          <div key={expense.id} className="px-4 py-3.5 flex items-center gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors" onClick={() => setSelectedExpense(expense)}>
+                            <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${isPartial ? 'bg-amber-500' : 'bg-red-500'}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${catColor(catName)}`}>{catName}</span>
+                                {subName && <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">{subName}</span>}
+                              </div>
+                              <p className="text-xs text-gray-400 dark:text-gray-500 truncate">
+                                {expense.description || '—'} · {formatDate(expense.expense_date)} · {expense.userName}
+                              </p>
+                              {isPartial && <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">{fmt(paidAmt)} paid</p>}
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-base font-bold text-red-600 dark:text-red-400">{fmt(pendingAmt)}</p>
+                              <p className="text-xs text-gray-400 dark:text-gray-500">of {fmt(expense.amount)}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* CATEGORY TAB */}
           {activeTab === 'category' && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-700">
+              <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-700 flex justify-between items-center">
                 <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Total · {fmt(grandTotal)}</span>
+                {grandPending > 0 && (
+                  <span className="text-xs font-semibold text-red-500 dark:text-red-400">{fmt(grandPending)} pending</span>
+                )}
               </div>
               <div className="p-4 space-y-5">
                 {categoryTotals.map(([catName, total]) => {
                   const pct = grandTotal > 0 ? (total / grandTotal) * 100 : 0;
                   const subBreakdown = subcategoryTotals[catName] || {};
+                  const catPending = categoryPendingTotals[catName] || 0;
                   return (
                     <div key={catName}>
                       <div className="flex justify-between items-center mb-1.5">
@@ -373,7 +566,12 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                       <div className="h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
                         <div className={`h-full rounded-full ${catBar(catName)} transition-all duration-500`} style={{ width: `${pct}%` }} />
                       </div>
-                      {/* Subcategory breakdown */}
+                      {catPending > 0 && (
+                        <div className="flex justify-between items-center text-xs mt-1.5 px-0.5">
+                          <span className="text-gray-400 dark:text-gray-500">Pending</span>
+                          <span className="font-semibold text-red-500 dark:text-red-400">{fmt(catPending)}</span>
+                        </div>
+                      )}
                       {Object.keys(subBreakdown).length > 0 && (
                         <div className="mt-2 space-y-1">
                           {Object.entries(subBreakdown).sort((a, b) => b[1] - a[1]).map(([subName, subTotal]) => (
@@ -409,6 +607,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                       {items.map(expense => {
                         const catName = getCategoryName(expense);
                         const subName = getSubcategoryName(expense);
+                        const pendingAmt = getPendingAmount(expense);
                         return (
                           <div key={expense.id} className="px-4 py-3 flex items-center justify-between gap-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 active:bg-gray-100 dark:active:bg-gray-700 transition-colors" onClick={() => setSelectedExpense(expense)}>
                             <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -419,7 +618,10 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
                               {expense.image_url && <img src={expense.image_url} alt="receipt" className="w-7 h-7 rounded object-cover border border-gray-200 dark:border-gray-600" />}
-                              <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{fmt(expense.amount)}</span>
+                              <div className="text-right">
+                                <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{fmt(expense.amount)}</span>
+                                {pendingAmt > 0 && <p className="text-xs text-red-500 dark:text-red-400">{fmt(pendingAmt)} due</p>}
+                              </div>
                             </div>
                           </div>
                         );
@@ -484,14 +686,104 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                   ? <p className="text-gray-600 dark:text-gray-300 mb-1">{selectedExpense.description}</p>
                   : <p className="text-gray-400 dark:text-gray-500 italic mb-1 text-sm">No description</p>}
                 <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">Added by {selectedExpense.userName}</p>
+
                 {selectedExpense.image_url && (
-                  <button onClick={() => setLightboxUrl(selectedExpense.image_url!)} className="w-full mb-5 block">
+                  <button onClick={() => setLightboxUrl(selectedExpense.image_url!)} className="w-full mb-4 block">
                     <img src={selectedExpense.image_url} alt="receipt" className="w-full h-52 object-cover rounded-2xl border border-gray-200 dark:border-gray-600" />
                     <p className="text-xs text-center text-gray-400 dark:text-gray-500 mt-1.5">Tap to view full image</p>
                   </button>
                 )}
+
+                {/* Payment section */}
+                {(() => {
+                  const paidAmt = Number(selectedExpense.paid_amount || 0);
+                  const pendingAmt = getPendingAmount(selectedExpense);
+                  const status = getPaymentStatus(selectedExpense);
+                  return (
+                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-2xl p-4 mb-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Payment</span>
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${STATUS_BADGE[status]}`}>
+                          {status === 'paid' ? 'Fully Paid' : status === 'partial' ? 'Partial' : 'Unpaid'}
+                        </span>
+                      </div>
+
+                      <div className={`grid gap-3 mb-3 ${pendingAmt > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        <div>
+                          <p className="text-xs text-gray-400 dark:text-gray-500">Paid</p>
+                          <p className="text-base font-bold text-green-600 dark:text-green-400">{fmt(paidAmt)}</p>
+                        </div>
+                        {pendingAmt > 0 && (
+                          <div>
+                            <p className="text-xs text-gray-400 dark:text-gray-500">Pending</p>
+                            <p className="text-base font-bold text-red-600 dark:text-red-400">{fmt(pendingAmt)}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Payment history */}
+                      {paymentHistory.length > 0 && (
+                        <div className="mb-3">
+                          <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">History</p>
+                          <div className="space-y-1.5">
+                            {paymentHistory.map(p => (
+                              <div key={p.id} className="flex justify-between items-center text-xs bg-white dark:bg-gray-800 rounded-xl px-3 py-2">
+                                <div>
+                                  <span className="font-semibold text-gray-700 dark:text-gray-200">{fmt(p.amount)}</span>
+                                  {p.note && <span className="text-gray-400 dark:text-gray-500 ml-2">{p.note}</span>}
+                                </div>
+                                <span className="text-gray-400 dark:text-gray-500">{formatDate(p.payment_date)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Record payment */}
+                      {pendingAmt > 0 && (
+                        showPaymentForm ? (
+                          <div className="space-y-2.5">
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                type="number" step="0.01" inputMode="decimal"
+                                value={newPaymentAmount}
+                                onChange={e => setNewPaymentAmount(e.target.value)}
+                                placeholder={`Max ${fmt(pendingAmt)}`}
+                                className="px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:border-green-500 placeholder-gray-400"
+                              />
+                              <input
+                                type="date"
+                                value={newPaymentDate}
+                                onChange={e => setNewPaymentDate(e.target.value)}
+                                className="px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm text-gray-800 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:border-green-500"
+                              />
+                            </div>
+                            <input
+                              type="text"
+                              value={newPaymentNote}
+                              onChange={e => setNewPaymentNote(e.target.value)}
+                              placeholder="Note (optional)"
+                              className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:border-green-500 placeholder-gray-400"
+                            />
+                            <div className="flex gap-2">
+                              <button onClick={() => setShowPaymentForm(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 active:scale-95 transition-all">Cancel</button>
+                              <button onClick={handleAddPayment} disabled={paymentSaving || !newPaymentAmount} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-green-600 active:scale-95 transition-all disabled:opacity-50">
+                                {paymentSaving ? 'Saving...' : 'Record Payment'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button onClick={() => setShowPaymentForm(true)} className="w-full py-2.5 rounded-xl text-sm font-semibold text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/30 active:scale-95 transition-all border border-green-200 dark:border-green-800">
+                            + Record Payment
+                          </button>
+                        )
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {selectedExpense.user_id === currentUserId && (
-                  <div className="flex gap-3 mt-2">
+                  <div className="flex gap-3">
                     <button onClick={() => { setEditingExpense(selectedExpense); closeDetail(); }} className="flex-1 py-3.5 rounded-2xl font-semibold text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 active:scale-95 transition-all">Edit</button>
                     <button onClick={() => setConfirmingDelete(true)} className="flex-1 py-3.5 rounded-2xl font-semibold text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 active:scale-95 transition-all">Delete</button>
                   </div>
@@ -522,7 +814,6 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
             <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-5" />
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-5">Edit Expense</h3>
             <div className="space-y-4">
-              {/* Category + Subcategory */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Category</label>
@@ -564,7 +855,6 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                   className="w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-800 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700" />
               </div>
 
-              {/* Image */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Receipt / Photo</label>
                 {editImagePreview ? (

@@ -15,6 +15,8 @@ interface Props {
   onCancel?: () => void;
 }
 
+type PaymentStatus = 'unpaid' | 'partial' | 'paid';
+
 const SEL = "w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700 text-sm font-medium appearance-none pr-8";
 
 export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
@@ -23,6 +25,8 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
   const [categoryId, setCategoryId] = useState('');
   const [subcategoryId, setSubcategoryId] = useState('');
   const [formData, setFormData] = useState({ amount: '', description: '', expense_date: localToday() });
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('unpaid');
+  const [paidAmount, setPaidAmount] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
@@ -45,6 +49,17 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
       setSubcategoryId(subs[0]?.id || '');
     });
   }, [categoryId]);
+
+  const handlePaymentStatusChange = (status: PaymentStatus) => {
+    setPaymentStatus(status);
+    if (status === 'paid') setPaidAmount(formData.amount);
+    else if (status === 'unpaid') setPaidAmount('');
+  };
+
+  const handleAmountChange = (val: string) => {
+    setFormData({ ...formData, amount: val });
+    if (paymentStatus === 'paid') setPaidAmount(val);
+  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -84,7 +99,7 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (!categoryId) { alert('Please select a category'); return; }
     setLoading(true);
@@ -92,20 +107,41 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      const totalAmount = parseFloat(formData.amount);
+      const paid_amount_value = paymentStatus === 'paid'
+        ? totalAmount
+        : paymentStatus === 'partial'
+          ? Math.min(parseFloat(paidAmount) || 0, totalAmount)
+          : 0;
+
       const image_url = await uploadImage();
 
-      const { error } = await supabase.from('expenses').insert([{
+      const { data: newExpense, error } = await supabase.from('expenses').insert([{
         user_id: user.id,
         category_id: categoryId || null,
         subcategory_id: subcategoryId || null,
-        amount: parseFloat(formData.amount),
+        amount: totalAmount,
+        paid_amount: paid_amount_value,
         description: formData.description,
         expense_date: formData.expense_date,
         ...(image_url ? { image_url } : {}),
-      }]);
+      }]).select().single();
 
       if (error) throw error;
+
+      if (paid_amount_value > 0 && newExpense) {
+        await supabase.from('payments').insert({
+          expense_id: newExpense.id,
+          user_id: user.id,
+          amount: paid_amount_value,
+          payment_date: formData.expense_date,
+          note: 'Initial payment',
+        });
+      }
+
       setFormData({ amount: '', description: '', expense_date: localToday() });
+      setPaymentStatus('unpaid');
+      setPaidAmount('');
       removeImage();
       onExpenseAdded();
     } catch (error) {
@@ -160,11 +196,54 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
           <input
             type="number" step="0.01" inputMode="decimal"
             value={formData.amount}
-            onChange={e => setFormData({ ...formData, amount: e.target.value })}
+            onChange={e => handleAmountChange(e.target.value)}
             className="w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700 text-lg font-semibold placeholder-gray-400 dark:placeholder-gray-500"
             placeholder="0" required
           />
         </div>
+
+        {/* Payment Status */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Payment Status</label>
+          <div className="grid grid-cols-3 gap-2">
+            {(['unpaid', 'partial', 'paid'] as PaymentStatus[]).map(status => (
+              <button
+                key={status}
+                type="button"
+                onClick={() => handlePaymentStatusChange(status)}
+                className={`py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                  paymentStatus === status
+                    ? status === 'paid'
+                      ? 'bg-green-500 text-white shadow-sm'
+                      : status === 'partial'
+                        ? 'bg-amber-500 text-white shadow-sm'
+                        : 'bg-red-500 text-white shadow-sm'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+                }`}
+              >
+                {status === 'unpaid' ? 'Unpaid' : status === 'partial' ? 'Partial' : 'Paid'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {paymentStatus === 'partial' && (
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Amount Paid (₹)</label>
+            <input
+              type="number" step="0.01" inputMode="decimal"
+              value={paidAmount}
+              onChange={e => setPaidAmount(e.target.value)}
+              className="w-full px-4 py-3.5 border border-amber-300 dark:border-amber-700 rounded-xl text-gray-900 dark:text-gray-100 focus:outline-none focus:border-amber-500 bg-amber-50 dark:bg-amber-900/20 text-lg font-semibold placeholder-gray-400 dark:placeholder-gray-500"
+              placeholder="0" required
+            />
+            {formData.amount && paidAmount && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 font-medium">
+                ₹{Math.max(0, parseFloat(formData.amount) - parseFloat(paidAmount)).toFixed(0)} remaining
+              </p>
+            )}
+          </div>
+        )}
 
         <div>
           <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Description</label>
