@@ -48,8 +48,8 @@ function TagIcon({ filled }: { filled: boolean }) {
 }
 
 const TABS = [
-  { href: '/dashboard', label: 'Home', Icon: HomeIcon },
   { href: '/dashboard/settlements', label: 'Settlements', Icon: SettleIcon },
+  { href: '/dashboard', label: 'Home', Icon: HomeIcon },
   { href: '/dashboard/categories', label: 'Categories', Icon: TagIcon },
 ];
 

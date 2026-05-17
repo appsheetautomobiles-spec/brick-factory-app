@@ -11,9 +11,10 @@ interface Subcategory { id: string; category_id: string; name: string }
 interface Expense {
   id: string;
   user_id: string;
-  category: string;
+  category_id?: string | null;
+  category?: { id: string; name: string } | null;
   subcategory_id?: string | null;
-  subcategory?: { id: string; name: string; category: { id: string; name: string } | null } | null;
+  subcategory?: { id: string; name: string } | null;
   amount: number;
   description: string;
   expense_date: string;
@@ -43,7 +44,7 @@ function hashIdx(str: string) { return str.split('').reduce((a, c) => a + c.char
 function catColor(name: string) { return CAT_COLORS[hashIdx(name)]; }
 function catBar(name: string) { return CAT_BAR[hashIdx(name)]; }
 
-function getCategoryName(e: Expense): string { return e.subcategory?.category?.name || e.category || 'Unknown'; }
+function getCategoryName(e: Expense): string { return e.category?.name || 'Unknown'; }
 function getSubcategoryName(e: Expense): string | null { return e.subcategory?.name || null; }
 
 const AVATAR_COLORS = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500'];
@@ -114,8 +115,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
     supabase.from('categories').select('*').order('name').then(({ data: cats }) => {
       const cats_ = cats || [];
       setEditCategories(cats_);
-      const matchId = editingExpense.subcategory?.category?.id || '';
-      setEditCategoryId(matchId || cats_[0]?.id || '');
+      setEditCategoryId(editingExpense.category_id || cats_[0]?.id || '');
     });
   }, [editingExpense]);
 
@@ -134,7 +134,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
     try {
       const [{ data: expData }, { data: usersData }] = await Promise.all([
         supabase.from('expenses')
-          .select('*, subcategory:subcategories!subcategory_id(id, name, category:categories!category_id(id, name))')
+          .select('*, category:categories!category_id(id, name), subcategory:subcategories!subcategory_id(id, name)')
           .order('expense_date', { ascending: false })
           .order('created_at', { ascending: false })
           .limit(200),
@@ -212,9 +212,8 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
     let finalImageUrl = editImageUrl;
     if (editImageFile) finalImageUrl = await uploadEditImage();
     const originalImageUrl = editingExpense.image_url;
-    const selectedCategory = editCategories.find(c => c.id === editCategoryId);
     const { error } = await supabase.from('expenses').update({
-      category: selectedCategory?.name || editingExpense.category,
+      category_id: editCategoryId || null,
       subcategory_id: editSubcategoryId || null,
       amount: parseFloat(editForm.amount),
       description: editForm.description,

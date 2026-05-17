@@ -69,14 +69,23 @@ export default function Navigation({ user, onRefresh, onProfileUpdate }: Props) 
     if (!name || profileSaving) return;
     setProfileSaving(true);
     try {
-      await Promise.all([
+      // Update auth metadata (affects greeting) and users table (affects expense list names)
+      const [authResult, apiResult] = await Promise.all([
         supabase.auth.updateUser({ data: { full_name: name } }),
-        supabase.from('users').update({ full_name: name }).eq('id', user.id),
+        fetch('/api/update-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, fullName: name }),
+        }).then(r => r.json()),
       ]);
+
+      if (authResult.error) throw new Error(authResult.error.message);
+      if (apiResult.error) throw new Error(apiResult.error);
+
       setShowProfile(false);
       onProfileUpdate?.();
-    } catch {
-      alert('Failed to update name. Please try again.');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update name. Please try again.');
     } finally {
       setProfileSaving(false);
     }

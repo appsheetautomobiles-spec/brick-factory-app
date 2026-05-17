@@ -10,7 +10,7 @@ import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import BottomNav from '@/components/BottomNav';
 
 interface Stats { year: number; month: number; today: number }
-interface LastEntry { category: string; amount: number; created_at: string; subcategory?: { name: string }[] | null }
+interface LastEntry { amount: number; created_at: string; category?: { name: string }[] | null; subcategory?: { name: string }[] | null }
 
 
 function localDateStr(d = new Date()): string {
@@ -79,7 +79,7 @@ export default function Dashboard() {
 
     const [{ data }, { data: last }] = await Promise.all([
       supabase.from('expenses').select('amount, expense_date').gte('expense_date', yearStart),
-      supabase.from('expenses').select('category, amount, created_at, subcategory:subcategories!subcategory_id(name)').order('created_at', { ascending: false }).limit(1).single(),
+      supabase.from('expenses').select('amount, created_at, category:categories!category_id(name), subcategory:subcategories!subcategory_id(name)').order('created_at', { ascending: false }).limit(1).single(),
     ]);
 
     if (data) {
@@ -147,7 +147,7 @@ export default function Dashboard() {
           </h1>
           {lastEntry ? (
             <p className="text-orange-200 text-sm mt-1.5 font-medium">
-              Last entry: {lastEntry.category}{lastEntry.subcategory?.[0]?.name ? ` · ${lastEntry.subcategory[0].name}` : ''} · {fmt(lastEntry.amount)} · {timeAgo(lastEntry.created_at)}
+              Last entry: {lastEntry.category?.[0]?.name ?? 'Unknown'}{lastEntry.subcategory?.[0]?.name ? ` · ${lastEntry.subcategory[0].name}` : ''} · {fmt(lastEntry.amount)} · {timeAgo(lastEntry.created_at)}
             </p>
           ) : (
             <p className="text-orange-200 text-sm mt-1.5 font-medium">No expenses logged yet</p>

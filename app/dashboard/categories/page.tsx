@@ -53,7 +53,15 @@ export default function CategoriesPage() {
 
   const deleteCategory = async (id: string) => {
     if (!confirm('Delete this category and all its subcategories?')) return;
-    await supabase.from('categories').delete().eq('id', id);
+    const { error } = await supabase.from('categories').delete().eq('id', id);
+    if (error) {
+      if (error.code === '23503') {
+        alert('This category has expenses linked to it. Delete or reassign those expenses first.');
+      } else {
+        alert(error.message);
+      }
+      return;
+    }
     await fetchData();
   };
 

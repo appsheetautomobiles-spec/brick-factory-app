@@ -84,7 +84,7 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!categoryId) { alert('Please select a category'); return; }
     setLoading(true);
@@ -93,11 +93,10 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
       if (!user) return;
 
       const image_url = await uploadImage();
-      const selectedCategory = categories.find(c => c.id === categoryId);
 
       const { error } = await supabase.from('expenses').insert([{
         user_id: user.id,
-        category: selectedCategory?.name || '',
+        category_id: categoryId || null,
         subcategory_id: subcategoryId || null,
         amount: parseFloat(formData.amount),
         description: formData.description,
