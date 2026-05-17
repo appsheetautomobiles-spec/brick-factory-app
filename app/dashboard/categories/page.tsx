@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
+import BottomNav from '@/components/BottomNav';
 
 interface Category { id: string; name: string }
 interface Subcategory { id: string; category_id: string; name: string }
@@ -89,8 +90,14 @@ export default function CategoriesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <Navigation user={user} />
-      <div className="max-w-2xl mx-auto px-4 py-6 pb-20 space-y-4">
+      <Navigation
+        user={user}
+        onProfileUpdate={async () => {
+          const { data: { user: u } } = await supabase.auth.getUser();
+          setUser(u);
+        }}
+      />
+      <div className="max-w-2xl mx-auto px-4 py-6 pb-24 space-y-4">
 
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Categories</h1>
@@ -204,6 +211,7 @@ export default function CategoriesPage() {
           </div>
         )}
       </div>
+      <BottomNav />
     </div>
   );
 }

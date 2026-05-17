@@ -1,6 +1,5 @@
 'use client';
 import { useState } from 'react';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '@/components/ThemeProvider';
@@ -21,19 +20,9 @@ function MoonIcon() {
   );
 }
 
-function TagIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-      <line x1="7" y1="7" x2="7.01" y2="7"/>
-    </svg>
-  );
-}
-
 function RefreshIcon({ spinning }: { spinning: boolean }) {
   return (
-    <svg
-      width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
       style={spinning ? { animation: 'spin 0.7s linear infinite' } : undefined}
     >
       <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
@@ -41,12 +30,21 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
   );
 }
 
-export default function Navigation({ user, onRefresh }: { user: any; onRefresh?: () => Promise<void> }) {
+interface Props {
+  user: any;
+  onRefresh?: () => Promise<void>;
+  onProfileUpdate?: () => void;
+}
+
+export default function Navigation({ user, onRefresh, onProfileUpdate }: Props) {
   const router = useRouter();
   const { theme, toggle } = useTheme();
   const [showConfirm, setShowConfirm] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -61,9 +59,32 @@ export default function Navigation({ user, onRefresh }: { user: any; onRefresh?:
     setRefreshing(false);
   };
 
-  const displayName = user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User';
+  const openProfile = () => {
+    setEditName(user?.user_metadata?.full_name || user?.email?.split('@')[0] || '');
+    setShowProfile(true);
+  };
+
+  const handleSaveProfile = async () => {
+    const name = editName.trim();
+    if (!name || profileSaving) return;
+    setProfileSaving(true);
+    try {
+      await Promise.all([
+        supabase.auth.updateUser({ data: { full_name: name } }),
+        supabase.from('users').update({ full_name: name }).eq('id', user.id),
+      ]);
+      setShowProfile(false);
+      onProfileUpdate?.();
+    } catch {
+      alert('Failed to update name. Please try again.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
   const avatarUrl = user?.user_metadata?.avatar_url;
-  const initials = displayName.slice(0, 2).toUpperCase();
+  const displayName = user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User';
+  const initials = (user?.user_metadata?.full_name || displayName).slice(0, 2).toUpperCase();
 
   return (
     <>
@@ -75,36 +96,39 @@ export default function Navigation({ user, onRefresh }: { user: any; onRefresh?:
           </div>
           <div className="flex items-center gap-2">
             {onRefresh && (
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
+              <button onClick={handleRefresh} disabled={refreshing}
                 className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors disabled:opacity-50"
                 aria-label="Refresh"
               >
                 <RefreshIcon spinning={refreshing} />
               </button>
             )}
-            <Link
-              href="/dashboard/categories"
-              className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-              aria-label="Manage categories"
-            >
-              <TagIcon />
-            </Link>
-            <button
-              onClick={toggle}
+            <button onClick={toggle}
               className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
               aria-label="Toggle theme"
             >
               {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
             </button>
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center text-xs font-bold">{initials}</div>
-            )}
-            <button
-              onClick={() => setShowConfirm(true)}
+
+            {/* Avatar — tappable to edit profile */}
+            <button onClick={openProfile} className="relative group" aria-label="Edit profile">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover ring-2 ring-transparent group-hover:ring-orange-400 transition-all" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center text-xs font-bold ring-2 ring-transparent group-hover:ring-orange-400 transition-all">
+                  {initials}
+                </div>
+              )}
+              {/* Pencil badge */}
+              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-orange-600 rounded-full flex items-center justify-center">
+                <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              </span>
+            </button>
+
+            <button onClick={() => setShowConfirm(true)}
               className="text-xs text-gray-500 dark:text-gray-400 font-medium py-1.5 px-3 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 active:scale-95 transition-all"
             >
               Sign out
@@ -112,6 +136,50 @@ export default function Navigation({ user, onRefresh }: { user: any; onRefresh?:
           </div>
         </div>
       </nav>
+
+      {/* Profile edit modal */}
+      {showProfile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 fade-in">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowProfile(false)} />
+          <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-xs slide-up">
+            <h3 className="text-base font-bold text-gray-900 dark:text-white mb-5 text-center">Edit Profile</h3>
+
+            {/* Avatar preview */}
+            <div className="flex justify-center mb-5">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" className="w-20 h-20 rounded-full object-cover ring-4 ring-orange-100 dark:ring-orange-900/40" />
+              ) : (
+                <div className="w-20 h-20 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400 flex items-center justify-center text-3xl font-bold ring-4 ring-orange-50 dark:ring-orange-900/20">
+                  {editName.slice(0, 2).toUpperCase() || initials}
+                </div>
+              )}
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Display Name</label>
+              <input
+                type="text"
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSaveProfile()}
+                placeholder="Your name"
+                autoFocus
+                className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 focus:outline-none focus:border-orange-500 placeholder-gray-400 dark:placeholder-gray-500"
+              />
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5">This name appears on all your expenses</p>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setShowProfile(false)}
+                className="flex-1 py-3 rounded-xl font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 active:scale-95 transition-all"
+              >Cancel</button>
+              <button onClick={handleSaveProfile} disabled={profileSaving || !editName.trim()}
+                className="flex-1 py-3 rounded-xl font-semibold text-white bg-orange-600 hover:bg-orange-700 active:scale-95 transition-all disabled:opacity-50"
+              >{profileSaving ? 'Saving...' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sign out confirmation */}
       {showConfirm && (
@@ -122,13 +190,10 @@ export default function Navigation({ user, onRefresh }: { user: any; onRefresh?:
             <p className="text-base font-bold text-gray-900 dark:text-white mb-1">Sign out?</p>
             <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">You'll need to sign in again to access your expenses.</p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setShowConfirm(false)}
+              <button onClick={() => setShowConfirm(false)}
                 className="flex-1 py-3 rounded-xl font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 active:scale-95 transition-all"
               >Cancel</button>
-              <button
-                onClick={handleSignOut}
-                disabled={signingOut}
+              <button onClick={handleSignOut} disabled={signingOut}
                 className="flex-1 py-3 rounded-xl font-semibold text-white bg-red-500 hover:bg-red-600 active:scale-95 transition-all disabled:opacity-50"
               >{signingOut ? 'Signing out...' : 'Sign out'}</button>
             </div>

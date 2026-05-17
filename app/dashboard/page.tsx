@@ -7,6 +7,7 @@ import Navigation from '@/components/Navigation';
 import ExpenseForm from '@/components/ExpenseForm';
 import ExpenseList from '@/components/ExpenseList';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
+import BottomNav from '@/components/BottomNav';
 
 interface Stats { year: number; month: number; today: number }
 interface LastEntry { category: string; amount: number; created_at: string; subcategory?: { name: string }[] | null }
@@ -126,7 +127,15 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <Navigation user={user} onRefresh={handleRefresh} />
+      <Navigation
+        user={user}
+        onRefresh={handleRefresh}
+        onProfileUpdate={async () => {
+          const { data: { user: u } } = await supabase.auth.getUser();
+          setUser(u);
+          setRefreshKey(k => k + 1);
+        }}
+      />
 
       {/* Hero header */}
       <div className="bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 dark:from-orange-700 dark:via-orange-800 dark:to-gray-900">
@@ -158,7 +167,7 @@ export default function Dashboard() {
       </div>
 
       {/* Content slides up over hero */}
-      <div className="max-w-2xl mx-auto px-4 -mt-8 pb-28 space-y-3">
+      <div className="max-w-2xl mx-auto px-4 -mt-8 pb-40 space-y-3">
         <ExpenseList
           refreshKey={refreshKey}
           currentUserId={user?.id}
@@ -167,11 +176,12 @@ export default function Dashboard() {
       </div>
 
       <PWAInstallPrompt />
+      <BottomNav />
 
-      {/* FAB */}
+      {/* FAB — sits above the bottom nav */}
       <button
         onClick={() => setShowAdd(true)}
-        className="fixed bottom-6 right-4 w-14 h-14 bg-orange-600 text-white rounded-full shadow-xl flex items-center justify-center text-3xl font-light active:scale-90 transition-transform z-20 leading-none"
+        className="fixed bottom-20 right-4 w-14 h-14 bg-orange-600 text-white rounded-full shadow-xl flex items-center justify-center text-3xl font-light active:scale-90 transition-transform z-20 leading-none"
         style={{ boxShadow: '0 4px 20px rgba(234,88,12,0.4)' }}
       >
         +

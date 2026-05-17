@@ -46,6 +46,8 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geist.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col">
+        {/* Capture beforeinstallprompt before React hydrates — component will read window.__pwaPrompt */}
+        <script dangerouslySetInnerHTML={{ __html: `window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__pwaPrompt=e;},{once:true});` }} />
         <ServiceWorkerRegistrar />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
