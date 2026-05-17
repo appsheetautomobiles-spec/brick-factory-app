@@ -32,6 +32,7 @@ interface Payment {
   payment_date: string;
   note?: string | null;
   created_at: string;
+  payer?: { full_name: string | null; email: string | null } | null;
 }
 
 interface EditForm { amount: string; description: string; expense_date: string }
@@ -130,6 +131,8 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
   const [newPaymentDate, setNewPaymentDate] = useState(localDateStr());
   const [newPaymentNote, setNewPaymentNote] = useState('');
   const [paymentSaving, setPaymentSaving] = useState(false);
+  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
+  const [confirmDeletePaymentId, setConfirmDeletePaymentId] = useState<string | null>(null);
 
   useEffect(() => { fetchExpenses(); }, [refreshKey]);
 
@@ -141,13 +144,14 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
       setShowPaymentForm(false);
       setNewPaymentAmount('');
       setNewPaymentNote('');
+      setConfirmDeletePaymentId(null);
       return;
     }
     supabase.from('payments')
-      .select('*')
+      .select('*, payer:users!user_id(full_name, email)')
       .eq('expense_id', selectedExpense.id)
       .order('payment_date', { ascending: false })
-      .then(({ data }) => setPaymentHistory(data || []));
+      .then(({ data }) => setPaymentHistory((data || []) as unknown as Payment[]));
   }, [selectedExpense]);
 
   useEffect(() => {
@@ -231,11 +235,31 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
       setNewPaymentNote('');
       setNewPaymentDate(localDateStr());
       setShowPaymentForm(false);
-      const { data } = await supabase.from('payments').select('*').eq('expense_id', selectedExpense.id).order('payment_date', { ascending: false });
+      const { data } = await supabase.from('payments').select('*, payer:users!user_id(full_name, email)').eq('expense_id', selectedExpense.id).order('payment_date', { ascending: false });
       setPaymentHistory(data || []);
       onStatsChange();
     }
     setPaymentSaving(false);
+  };
+
+  const handleDeletePayment = async (payment: Payment) => {
+    if (!selectedExpense) return;
+    setDeletingPaymentId(payment.id);
+    const newPaid = Math.max(0, Number(selectedExpense.paid_amount || 0) - Number(payment.amount));
+    const [{ error: delErr }, { error: updErr }] = await Promise.all([
+      supabase.from('payments').delete().eq('id', payment.id),
+      supabase.from('expenses').update({ paid_amount: newPaid }).eq('id', selectedExpense.id),
+    ]);
+    if (delErr || updErr) {
+      alert((delErr || updErr)?.message);
+    } else {
+      const updated = { ...selectedExpense, paid_amount: newPaid };
+      setExpenses(prev => prev.map(e => e.id === selectedExpense.id ? updated : e));
+      setSelectedExpense(updated);
+      setPaymentHistory(prev => prev.filter(p => p.id !== payment.id));
+      onStatsChange();
+    }
+    setDeletingPaymentId(null);
   };
 
   const filteredExpenses = useMemo(() => {
@@ -308,10 +332,13 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
     let finalImageUrl = editImageUrl;
     if (editImageFile) finalImageUrl = await uploadEditImage();
     const originalImageUrl = editingExpense.image_url;
+    const newAmount = parseFloat(editForm.amount);
+    const currentPaid = Number(editingExpense.paid_amount || 0);
     const { error } = await supabase.from('expenses').update({
       category_id: editCategoryId || null,
       subcategory_id: editSubcategoryId || null,
-      amount: parseFloat(editForm.amount),
+      amount: newAmount,
+      paid_amount: Math.min(currentPaid, newAmount),
       description: editForm.description,
       expense_date: editForm.expense_date,
       image_url: finalImageUrl,
@@ -727,12 +754,35 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                           <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">History</p>
                           <div className="space-y-1.5">
                             {paymentHistory.map(p => (
-                              <div key={p.id} className="flex justify-between items-center text-xs bg-white dark:bg-gray-800 rounded-xl px-3 py-2">
-                                <div>
+                              <div key={p.id} className="flex items-center gap-2 text-xs bg-white dark:bg-gray-800 rounded-xl px-3 py-2">
+                                <div className="flex-1 min-w-0">
                                   <span className="font-semibold text-gray-700 dark:text-gray-200">{fmt(p.amount)}</span>
-                                  {p.note && <span className="text-gray-400 dark:text-gray-500 ml-2">{p.note}</span>}
+                                  <span className="text-gray-400 dark:text-gray-500 ml-2">
+                                    {p.payer?.full_name || p.payer?.email?.split('@')[0] || 'Unknown'}
+                                  </span>
+                                  {p.note && <span className="text-gray-300 dark:text-gray-600 ml-1">· {p.note}</span>}
                                 </div>
-                                <span className="text-gray-400 dark:text-gray-500">{formatDate(p.payment_date)}</span>
+                                <span className="text-gray-400 dark:text-gray-500 shrink-0">{formatDate(p.payment_date)}</span>
+                                {p.user_id === currentUserId && confirmDeletePaymentId === p.id ? (
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      onClick={() => { setConfirmDeletePaymentId(null); handleDeletePayment(p); }}
+                                      disabled={deletingPaymentId === p.id}
+                                      className="px-2 py-0.5 rounded-lg text-xs font-semibold text-white bg-red-500 active:scale-95 transition-all disabled:opacity-40"
+                                    >{deletingPaymentId === p.id ? '…' : 'Yes'}</button>
+                                    <button
+                                      onClick={() => setConfirmDeletePaymentId(null)}
+                                      className="px-2 py-0.5 rounded-lg text-xs font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 active:scale-95 transition-all"
+                                    >No</button>
+                                  </div>
+                                ) : p.user_id === currentUserId ? (
+                                  <button
+                                    onClick={() => setConfirmDeletePaymentId(p.id)}
+                                    className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                  >
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                  </button>
+                                ) : null}
                               </div>
                             ))}
                           </div>
@@ -812,7 +862,32 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
           <div className="absolute inset-0 bg-black/50" onClick={() => setEditingExpense(null)} />
           <div className="relative w-full max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-t-3xl px-4 pt-3 pb-10 slide-up max-h-[90vh] overflow-y-auto">
             <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-5" />
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-5">Edit Expense</h3>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Edit Expense</h3>
+            {(() => {
+              const paidAmt = Number(editingExpense.paid_amount || 0);
+              if (paidAmt === 0) return null;
+              const pendingAmt = Number(editingExpense.amount) - paidAmt;
+              const status = getPaymentStatus(editingExpense);
+              return (
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-3 flex items-center justify-between mb-4">
+                  <div className="flex gap-5">
+                    <div>
+                      <p className="text-xs text-gray-400 dark:text-gray-500">Paid</p>
+                      <p className="text-sm font-bold text-green-600 dark:text-green-400">{fmt(paidAmt)}</p>
+                    </div>
+                    {pendingAmt > 0 && (
+                      <div>
+                        <p className="text-xs text-gray-400 dark:text-gray-500">Pending</p>
+                        <p className="text-sm font-bold text-red-600 dark:text-red-400">{fmt(pendingAmt)}</p>
+                      </div>
+                    )}
+                  </div>
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${STATUS_BADGE[status]}`}>
+                    {status === 'paid' ? 'Fully Paid' : status === 'partial' ? 'Partial' : 'Unpaid'}
+                  </span>
+                </div>
+              );
+            })()}
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -841,6 +916,16 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
                 <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Amount (₹)</label>
                 <input type="number" step="0.01" inputMode="decimal" value={editForm.amount} onChange={e => setEditForm({ ...editForm, amount: e.target.value })}
                   className="w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700 text-lg font-semibold" />
+                {(() => {
+                  const newAmt = parseFloat(editForm.amount) || 0;
+                  const paidAmt = Number(editingExpense.paid_amount || 0);
+                  if (paidAmt > 0 && newAmt < paidAmt) return (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 font-medium">
+                      ⚠️ Less than amount already paid ({fmt(paidAmt)}). Paid amount will be adjusted down to match.
+                    </p>
+                  );
+                  return null;
+                })()}
               </div>
 
               <div>
