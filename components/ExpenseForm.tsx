@@ -1,5 +1,5 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
 function localToday(): string {
@@ -7,41 +7,51 @@ function localToday(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const CATEGORIES = ['raw_materials', 'labor', 'utilities', 'maintenance', 'transport', 'other'];
-
-const CATEGORY_LABELS: Record<string, string> = {
-  raw_materials: 'Raw Materials',
-  labor: 'Labor',
-  utilities: 'Utilities',
-  maintenance: 'Maintenance',
-  transport: 'Transport',
-  other: 'Other',
-};
+interface Category { id: string; name: string }
+interface Subcategory { id: string; category_id: string; name: string }
 
 interface Props {
   onExpenseAdded: () => void;
   onCancel?: () => void;
 }
 
+const SEL = "w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700 text-sm font-medium appearance-none pr-8";
+
 export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
-  const [formData, setFormData] = useState({
-    category: 'raw_materials',
-    amount: '',
-    description: '',
-    expense_date: localToday(),
-  });
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [categoryId, setCategoryId] = useState('');
+  const [subcategoryId, setSubcategoryId] = useState('');
+  const [formData, setFormData] = useState({ amount: '', description: '', expense_date: localToday() });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    supabase.from('categories').select('*').order('name').then(({ data }) => {
+      const cats = data || [];
+      setCategories(cats);
+      if (cats.length) setCategoryId(cats[0].id);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!categoryId) { setSubcategories([]); setSubcategoryId(''); return; }
+    supabase.from('subcategories').select('*').eq('category_id', categoryId).order('name').then(({ data }) => {
+      const subs = data || [];
+      setSubcategories(subs);
+      setSubcategoryId(subs[0]?.id || '');
+    });
+  }, [categoryId]);
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setImageFile(file);
     const reader = new FileReader();
-    reader.onload = (ev) => setImagePreview(ev.target?.result as string);
+    reader.onload = ev => setImagePreview(ev.target?.result as string);
     reader.readAsDataURL(file);
   };
 
@@ -59,7 +69,6 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
       fd.append('file', imageFile);
       fd.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!);
       fd.append('folder', 'ittige-factory');
-
       const res = await fetch(
         `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
         { method: 'POST', body: fd }
@@ -77,16 +86,19 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!categoryId) { alert('Please select a category'); return; }
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
       const image_url = await uploadImage();
+      const selectedCategory = categories.find(c => c.id === categoryId);
 
       const { error } = await supabase.from('expenses').insert([{
         user_id: user.id,
-        category: formData.category,
+        category: selectedCategory?.name || '',
+        subcategory_id: subcategoryId || null,
         amount: parseFloat(formData.amount),
         description: formData.description,
         expense_date: formData.expense_date,
@@ -94,7 +106,7 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
       }]);
 
       if (error) throw error;
-      setFormData({ category: 'raw_materials', amount: '', description: '', expense_date: localToday() });
+      setFormData({ amount: '', description: '', expense_date: localToday() });
       removeImage();
       onExpenseAdded();
     } catch (error) {
@@ -109,37 +121,49 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
       <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-5">Add Expense</h2>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Category</label>
-          <div className="grid grid-cols-3 gap-2">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setFormData({ ...formData, category: cat })}
-                className={`py-2.5 px-2 rounded-xl text-xs font-semibold border transition-all ${
-                  formData.category === cat
-                    ? 'bg-orange-600 text-white border-orange-600'
-                    : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600'
-                }`}
+        {/* Category + Subcategory */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Category</label>
+            <div className="relative">
+              <select value={categoryId} onChange={e => setCategoryId(e.target.value)} className={SEL}>
+                {categories.length === 0 && <option value="">No categories</option>}
+                {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+              </select>
+              <svg className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Subcategory</label>
+            <div className="relative">
+              <select
+                value={subcategoryId}
+                onChange={e => setSubcategoryId(e.target.value)}
+                disabled={subcategories.length === 0}
+                className={`${SEL} disabled:opacity-50`}
               >
-                {CATEGORY_LABELS[cat]}
-              </button>
-            ))}
+                {subcategories.length === 0 && <option value="">None</option>}
+                {subcategories.map(sub => <option key={sub.id} value={sub.id}>{sub.name}</option>)}
+              </select>
+              <svg className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            </div>
           </div>
         </div>
+
+        {categories.length === 0 && (
+          <p className="text-xs text-orange-500 font-medium">
+            No categories found. <a href="/dashboard/categories" className="underline font-semibold">Add categories first →</a>
+          </p>
+        )}
 
         <div>
           <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Amount (₹)</label>
           <input
-            type="number"
-            step="0.01"
-            inputMode="decimal"
+            type="number" step="0.01" inputMode="decimal"
             value={formData.amount}
-            onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+            onChange={e => setFormData({ ...formData, amount: e.target.value })}
             className="w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700 text-lg font-semibold placeholder-gray-400 dark:placeholder-gray-500"
-            placeholder="0"
-            required
+            placeholder="0" required
           />
         </div>
 
@@ -148,7 +172,7 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
           <input
             type="text"
             value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            onChange={e => setFormData({ ...formData, description: e.target.value })}
             className="w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-800 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500"
             placeholder="Optional note"
           />
@@ -159,7 +183,7 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
           <input
             type="date"
             value={formData.expense_date}
-            onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })}
+            onChange={e => setFormData({ ...formData, expense_date: e.target.value })}
             className="w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-800 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700"
           />
         </div>
@@ -170,13 +194,7 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
           {imagePreview ? (
             <div className="relative">
               <img src={imagePreview} alt="Preview" className="w-full h-40 object-cover rounded-xl border border-gray-200 dark:border-gray-600" />
-              <button
-                type="button"
-                onClick={removeImage}
-                className="absolute top-2 right-2 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center text-white text-sm font-bold shadow"
-              >
-                ×
-              </button>
+              <button type="button" onClick={removeImage} className="absolute top-2 right-2 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center text-white text-sm font-bold shadow">×</button>
             </div>
           ) : (
             <button
@@ -191,28 +209,18 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
               Attach photo
             </button>
           )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleImageChange}
-          />
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
         </div>
 
         <div className="flex gap-3 pt-1">
           {onCancel && (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex-1 py-4 rounded-xl font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 active:scale-95 transition-all"
-            >
+            <button type="button" onClick={onCancel} className="flex-1 py-4 rounded-xl font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 active:scale-95 transition-all">
               Cancel
             </button>
           )}
           <button
             type="submit"
-            disabled={loading || imageUploading}
+            disabled={loading || imageUploading || !categoryId}
             className="flex-1 bg-orange-600 text-white py-4 rounded-xl font-semibold text-base hover:bg-orange-700 active:scale-95 transition-all disabled:opacity-50"
           >
             {imageUploading ? 'Uploading...' : loading ? 'Saving...' : 'Save Expense'}

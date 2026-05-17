@@ -6,18 +6,11 @@ import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import ExpenseForm from '@/components/ExpenseForm';
 import ExpenseList from '@/components/ExpenseList';
+import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 
 interface Stats { year: number; month: number; today: number }
-interface LastEntry { category: string; amount: number; created_at: string }
+interface LastEntry { category: string; amount: number; created_at: string; subcategory?: { name: string }[] | null }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  raw_materials: 'Raw Materials',
-  labor: 'Labor',
-  utilities: 'Utilities',
-  maintenance: 'Maintenance',
-  transport: 'Transport',
-  other: 'Other',
-};
 
 function localDateStr(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -85,7 +78,7 @@ export default function Dashboard() {
 
     const [{ data }, { data: last }] = await Promise.all([
       supabase.from('expenses').select('amount, expense_date').gte('expense_date', yearStart),
-      supabase.from('expenses').select('category, amount, created_at').order('created_at', { ascending: false }).limit(1).single(),
+      supabase.from('expenses').select('category, amount, created_at, subcategory:subcategories!subcategory_id(name)').order('created_at', { ascending: false }).limit(1).single(),
     ]);
 
     if (data) {
@@ -96,6 +89,11 @@ export default function Dashboard() {
       });
     }
     if (last) setLastEntry(last as LastEntry);
+  };
+
+  const handleRefresh = async () => {
+    await fetchStats();
+    setRefreshKey(k => k + 1);
   };
 
   const handleExpenseAdded = () => {
@@ -128,7 +126,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <Navigation user={user} />
+      <Navigation user={user} onRefresh={handleRefresh} />
 
       {/* Hero header */}
       <div className="bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 dark:from-orange-700 dark:via-orange-800 dark:to-gray-900">
@@ -140,7 +138,7 @@ export default function Dashboard() {
           </h1>
           {lastEntry ? (
             <p className="text-orange-200 text-sm mt-1.5 font-medium">
-              Last entry: {CATEGORY_LABELS[lastEntry.category] ?? lastEntry.category} · {fmt(lastEntry.amount)} · {timeAgo(lastEntry.created_at)}
+              Last entry: {lastEntry.category}{lastEntry.subcategory?.[0]?.name ? ` · ${lastEntry.subcategory[0].name}` : ''} · {fmt(lastEntry.amount)} · {timeAgo(lastEntry.created_at)}
             </p>
           ) : (
             <p className="text-orange-200 text-sm mt-1.5 font-medium">No expenses logged yet</p>
@@ -167,6 +165,8 @@ export default function Dashboard() {
           onStatsChange={fetchStats}
         />
       </div>
+
+      <PWAInstallPrompt />
 
       {/* FAB */}
       <button

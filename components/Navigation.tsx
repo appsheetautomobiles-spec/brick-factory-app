@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '@/components/ThemeProvider';
@@ -20,16 +21,44 @@ function MoonIcon() {
   );
 }
 
-export default function Navigation({ user }: { user: any }) {
+function TagIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+      <line x1="7" y1="7" x2="7.01" y2="7"/>
+    </svg>
+  );
+}
+
+function RefreshIcon({ spinning }: { spinning: boolean }) {
+  return (
+    <svg
+      width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+      style={spinning ? { animation: 'spin 0.7s linear infinite' } : undefined}
+    >
+      <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+    </svg>
+  );
+}
+
+export default function Navigation({ user, onRefresh }: { user: any; onRefresh?: () => Promise<void> }) {
   const router = useRouter();
   const { theme, toggle } = useTheme();
   const [showConfirm, setShowConfirm] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const handleSignOut = async () => {
     setSigningOut(true);
     await supabase.auth.signOut();
     router.push('/');
+  };
+
+  const handleRefresh = async () => {
+    if (!onRefresh || refreshing) return;
+    setRefreshing(true);
+    await onRefresh();
+    setRefreshing(false);
   };
 
   const displayName = user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User';
@@ -45,6 +74,23 @@ export default function Navigation({ user }: { user: any }) {
             <span className="font-bold text-gray-900 dark:text-white text-base tracking-tight">Ittige Factory</span>
           </div>
           <div className="flex items-center gap-2">
+            {onRefresh && (
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors disabled:opacity-50"
+                aria-label="Refresh"
+              >
+                <RefreshIcon spinning={refreshing} />
+              </button>
+            )}
+            <Link
+              href="/dashboard/categories"
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+              aria-label="Manage categories"
+            >
+              <TagIcon />
+            </Link>
             <button
               onClick={toggle}
               className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
@@ -79,16 +125,12 @@ export default function Navigation({ user }: { user: any }) {
               <button
                 onClick={() => setShowConfirm(false)}
                 className="flex-1 py-3 rounded-xl font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 active:scale-95 transition-all"
-              >
-                Cancel
-              </button>
+              >Cancel</button>
               <button
                 onClick={handleSignOut}
                 disabled={signingOut}
                 className="flex-1 py-3 rounded-xl font-semibold text-white bg-red-500 hover:bg-red-600 active:scale-95 transition-all disabled:opacity-50"
-              >
-                {signingOut ? 'Signing out...' : 'Sign out'}
-              </button>
+              >{signingOut ? 'Signing out...' : 'Sign out'}</button>
             </div>
           </div>
         </div>
