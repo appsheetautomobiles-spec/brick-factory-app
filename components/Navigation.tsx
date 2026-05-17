@@ -101,7 +101,10 @@ export default function Navigation({ user, onRefresh, onProfileUpdate }: Props) 
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="text-2xl">🧱</span>
-            <span className="font-bold text-gray-900 dark:text-white text-base tracking-tight">Ittige Factory</span>
+            <div>
+              <p className="font-bold text-gray-900 dark:text-white text-base tracking-tight leading-tight">Ittige Factory</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 font-medium leading-tight">Expense Tracker</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {onRefresh && (
