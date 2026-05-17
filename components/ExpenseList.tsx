@@ -463,20 +463,22 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
 
       {/* Custom date range inputs */}
       {dateFilter === 'custom' && (
-        <div className="grid grid-cols-2 gap-2 bg-white dark:bg-gray-800 rounded-2xl shadow-sm px-3 py-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-1">From</p>
-            <input
-              type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-              className="w-full text-sm text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2 focus:outline-none focus:border-orange-500"
-            />
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm px-4 py-3 space-y-2.5">
+          <div>
+            <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-1.5">From</p>
+            <div className="overflow-hidden rounded-xl">
+              <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                className="w-full min-w-0 px-3 py-2.5 text-sm text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:border-orange-500"
+              />
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-1">To</p>
-            <input
-              type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-              className="w-full text-sm text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-2 py-2 focus:outline-none focus:border-orange-500"
-            />
+          <div>
+            <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 mb-1.5">To</p>
+            <div className="overflow-hidden rounded-xl">
+              <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                className="w-full min-w-0 px-3 py-2.5 text-sm text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none focus:border-orange-500"
+              />
+            </div>
           </div>
         </div>
       )}
@@ -1010,8 +1012,10 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
 
               <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Date</label>
-                <input type="date" value={editForm.expense_date} onChange={e => setEditForm({ ...editForm, expense_date: e.target.value })}
-                  className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700" />
+                <div className="overflow-hidden rounded-xl">
+                  <input type="date" value={editForm.expense_date} onChange={e => setEditForm({ ...editForm, expense_date: e.target.value })}
+                    className="w-full min-w-0 px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700" />
+                </div>
               </div>
 
               <div>

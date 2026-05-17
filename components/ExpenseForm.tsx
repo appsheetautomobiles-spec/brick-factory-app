@@ -258,12 +258,14 @@ export default function ExpenseForm({ onExpenseAdded, onCancel }: Props) {
 
         <div>
           <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Date</label>
-          <input
-            type="date"
-            value={formData.expense_date}
-            onChange={e => setFormData({ ...formData, expense_date: e.target.value })}
-            className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700"
-          />
+          <div className="overflow-hidden rounded-xl">
+            <input
+              type="date"
+              value={formData.expense_date}
+              onChange={e => setFormData({ ...formData, expense_date: e.target.value })}
+              className="w-full min-w-0 px-3 py-2.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:border-orange-500 bg-gray-50 dark:bg-gray-700"
+            />
+          </div>
         </div>
 
         {/* Image upload */}
