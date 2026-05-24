@@ -13,7 +13,8 @@ interface Expense {
   category?: { name: string } | null;
 }
 interface Payment { id: string; expense_id: string; user_id: string; amount: number; payment_date: string; note?: string }
-interface Session { id: string; settled_at: string; note?: string }
+interface SessionTransfer { from_user_id: string; to_user_id: string; amount: number }
+interface Session { id: string; settled_at: string; note?: string; transfers?: SessionTransfer[] }
 interface MemberBalance { user_id: string; name: string; paid: number; share: number; balance: number }
 interface Transfer { from: string; fromName: string; to: string; toName: string; amount: number }
 
@@ -98,13 +99,28 @@ export default function SettlementsPage() {
     const mems = membersData ?? [];
     const uMap: Record<string, AppUser> = {};
     (usersData ?? []).forEach((u: AppUser) => { uMap[u.id] = u; });
-    const sess = sessionsData ?? [];
+    const rawSess: Session[] = sessionsData ?? [];
+
+    // Fetch transfers for each session
+    let sessWithTransfers: Session[] = rawSess;
+    if (rawSess.length > 0) {
+      const { data: transfersData } = await supabase
+        .from('settlement_transfers')
+        .select('session_id, from_user_id, to_user_id, amount')
+        .in('session_id', rawSess.map(s => s.id));
+      const transfersBySession: Record<string, SessionTransfer[]> = {};
+      (transfersData ?? []).forEach((t: any) => {
+        if (!transfersBySession[t.session_id]) transfersBySession[t.session_id] = [];
+        transfersBySession[t.session_id].push({ from_user_id: t.from_user_id, to_user_id: t.to_user_id, amount: t.amount });
+      });
+      sessWithTransfers = rawSess.map(s => ({ ...s, transfers: transfersBySession[s.id] ?? [] }));
+    }
 
     setMembers(mems);
     setUsersMap(uMap);
-    setSessions(sess);
+    setSessions(sessWithTransfers);
 
-    const lastSettled = sess[0]?.settled_at ?? null;
+    const lastSettled = rawSess[0]?.settled_at ?? null;
     const [{ data: expData }, { data: payData }] = await Promise.all([
       lastSettled
         ? supabase.from('expenses').select('id, amount, paid_amount, expense_date, description, created_at, user_id, category:categories!category_id(name)').gte('created_at', lastSettled)
@@ -131,7 +147,18 @@ export default function SettlementsPage() {
 
   const handleSettle = async () => {
     setSettling(true);
-    await supabase.from('settlement_sessions').insert({ settled_by: user.id, note: settleNote || null });
+    const { data: session } = await supabase
+      .from('settlement_sessions')
+      .insert({ settled_by: user.id, note: settleNote || null })
+      .select('id')
+      .single();
+
+    if (session && transfers.length > 0) {
+      await supabase.from('settlement_transfers').insert(
+        transfers.map(t => ({ session_id: session.id, from_user_id: t.from, to_user_id: t.to, amount: t.amount }))
+      );
+    }
+
     setShowSettleConfirm(false);
     setSettleNote('');
     await fetchData();
@@ -267,14 +294,16 @@ export default function SettlementsPage() {
               </div>
             )}
 
-            {/* Mark as Settled button */}
-            <button
-              onClick={() => setShowSettleConfirm(true)}
-              className="w-full py-3.5 bg-orange-600 text-white font-bold rounded-2xl text-base active:scale-95 transition-transform shadow-lg"
-              style={{ boxShadow: '0 4px 16px rgba(234,88,12,0.35)' }}
-            >
-              Mark as Settled
-            </button>
+            {/* Mark as Settled button — only when balances are uneven */}
+            {transfers.length > 0 && (
+              <button
+                onClick={() => setShowSettleConfirm(true)}
+                className="w-full py-3.5 bg-orange-600 text-white font-bold rounded-2xl text-base active:scale-95 transition-transform shadow-lg"
+                style={{ boxShadow: '0 4px 16px rgba(234,88,12,0.35)' }}
+              >
+                Mark as Settled
+              </button>
+            )}
 
             {/* Expense details collapsible */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
@@ -353,12 +382,28 @@ export default function SettlementsPage() {
                     <p className="text-gray-400 text-sm text-center py-6">No settlements yet</p>
                   ) : (
                     sessions.map(s => (
-                      <div key={s.id} className="px-4 py-3 flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-800 dark:text-white">{fmtDate(s.settled_at)}</p>
-                          {s.note && <p className="text-xs text-gray-400 mt-0.5">{s.note}</p>}
+                      <div key={s.id} className="px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-800 dark:text-white">{fmtDate(s.settled_at)}</p>
+                            {s.note && <p className="text-xs text-gray-400 mt-0.5">{s.note}</p>}
+                          </div>
+                          <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-semibold px-2 py-0.5 rounded-full">Settled</span>
                         </div>
-                        <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-semibold px-2 py-0.5 rounded-full">Settled</span>
+                        {s.transfers && s.transfers.length > 0 && (
+                          <div className="mt-2 space-y-1">
+                            {s.transfers.map((t, i) => (
+                              <div key={i} className="flex items-center justify-between text-xs pl-2 border-l-2 border-orange-300">
+                                <span className="text-gray-500 dark:text-gray-400">
+                                  <span className="text-red-500 font-medium">{usersMap[t.from_user_id]?.full_name?.split(' ')[0] || usersMap[t.from_user_id]?.email?.split('@')[0] || 'Unknown'}</span>
+                                  {' → '}
+                                  <span className="text-green-600 font-medium">{usersMap[t.to_user_id]?.full_name?.split(' ')[0] || usersMap[t.to_user_id]?.email?.split('@')[0] || 'Unknown'}</span>
+                                </span>
+                                <span className="font-semibold text-gray-700 dark:text-gray-300">{fmt(t.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))
                   )}
