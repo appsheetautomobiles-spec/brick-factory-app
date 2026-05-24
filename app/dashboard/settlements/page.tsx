@@ -28,13 +28,14 @@ function fmtDate(iso: string): string {
 }
 
 function calculateTransfers(balances: MemberBalance[]): Transfer[] {
+  if (balances.length < 2) return [];
   const members = balances.map(m => ({ ...m, bal: m.balance }));
   const transfers: Transfer[] = [];
   for (let i = 0; i < 100; i++) {
     members.sort((a, b) => a.bal - b.bal);
     const debtor = members[0];
     const creditor = members[members.length - 1];
-    if (Math.abs(debtor.bal) < 0.5 || creditor.bal < 0.5) break;
+    if (!debtor || !creditor || Math.abs(debtor.bal) < 0.5 || creditor.bal < 0.5) break;
     const amount = Math.min(-debtor.bal, creditor.bal);
     transfers.push({ from: debtor.user_id, fromName: debtor.name, to: creditor.user_id, toName: creditor.name, amount });
     debtor.bal += amount;
