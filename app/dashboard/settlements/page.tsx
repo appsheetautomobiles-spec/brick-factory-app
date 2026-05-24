@@ -55,6 +55,7 @@ export default function SettlementsPage() {
   const [usersMap, setUsersMap] = useState<Record<string, AppUser>>({});
   const [showExpenses, setShowExpenses] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showMembers, setShowMembers] = useState(false);
   const [showSettleConfirm, setShowSettleConfirm] = useState(false);
   const [settleNote, setSettleNote] = useState('');
   const [settling, setSettling] = useState(false);
@@ -162,10 +163,21 @@ export default function SettlementsPage() {
       {/* Hero */}
       <div className="bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 dark:from-orange-700 dark:via-orange-800 dark:to-gray-900">
         <div className="max-w-2xl mx-auto px-4 pt-6 pb-14">
-          <h1 className="text-2xl font-bold text-white">Settlements</h1>
-          <p className="text-orange-200 text-sm mt-0.5">
-            {periodStart ? `Since ${fmtDate(periodStart)}` : 'All time'}
-          </p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-white">Settlements</h1>
+              <p className="text-orange-200 text-sm mt-0.5">
+                {periodStart ? `Since ${fmtDate(periodStart)}` : 'All time'}
+              </p>
+            </div>
+            <button
+              onClick={() => setShowMembers(true)}
+              className="flex items-center gap-1.5 bg-white/20 text-white text-xs font-semibold px-3 py-1.5 rounded-full border border-white/30 active:scale-95 transition-transform"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Members
+            </button>
+          </div>
 
           <div className="mt-4 grid grid-cols-2 gap-2.5">
             <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-3.5 border border-white/20">
@@ -358,6 +370,36 @@ export default function SettlementsPage() {
       </div>
 
       <BottomNav />
+
+      {/* Members sheet (read-only) */}
+      {showMembers && (
+        <div className="fixed inset-0 z-30 flex items-end fade-in">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowMembers(false)} />
+          <div className="relative w-full max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-t-3xl px-4 pt-3 pb-10 slide-up max-h-[70vh] overflow-y-auto">
+            <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-5" />
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Settlement Members</h2>
+            {members.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-6">No members yet</p>
+            ) : (
+              <div className="space-y-2">
+                {members.map(m => (
+                  <div key={m.user_id} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-xl">
+                    <div className="w-9 h-9 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-sm font-bold text-orange-600">
+                      {(usersMap[m.user_id]?.full_name || usersMap[m.user_id]?.email || '?')[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800 dark:text-white">
+                        {usersMap[m.user_id]?.full_name || usersMap[m.user_id]?.email?.split('@')[0] || 'Unknown'}
+                      </p>
+                      <p className="text-xs text-gray-400">{usersMap[m.user_id]?.email}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Settle confirmation sheet */}
       {showSettleConfirm && (
