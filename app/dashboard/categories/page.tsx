@@ -18,6 +18,7 @@ export default function CategoriesPage() {
   const [newCatName, setNewCatName] = useState('');
   const [newSubNames, setNewSubNames] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [confirmDeleteSub, setConfirmDeleteSub] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -77,8 +78,10 @@ export default function CategoriesPage() {
     setSaving(false);
   };
 
-  const deleteSubcategory = async (id: string) => {
-    await supabase.from('subcategories').delete().eq('id', id);
+  const deleteSubcategory = async () => {
+    if (!confirmDeleteSub) return;
+    await supabase.from('subcategories').delete().eq('id', confirmDeleteSub.id);
+    setConfirmDeleteSub(null);
     await fetchData();
   };
 
@@ -189,7 +192,7 @@ export default function CategoriesPage() {
                         <div key={sub.id} className="flex items-center justify-between px-5 py-2.5 border-b border-gray-50 dark:border-gray-700 last:border-0">
                           <p className="text-sm text-gray-700 dark:text-gray-300">{sub.name}</p>
                           <button
-                            onClick={() => deleteSubcategory(sub.id)}
+                            onClick={() => setConfirmDeleteSub({ id: sub.id, name: sub.name })}
                             className="text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 p-1 transition-colors"
                           >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -223,6 +226,30 @@ export default function CategoriesPage() {
         )}
       </div>
       <BottomNav />
+
+      {/* Subcategory delete confirm */}
+      {confirmDeleteSub && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 fade-in">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setConfirmDeleteSub(null)} />
+          <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-xs text-center slide-up">
+            <div className="text-3xl mb-3">🗑️</div>
+            <p className="text-base font-bold text-gray-900 dark:text-white mb-1">Delete subcategory?</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">
+              &ldquo;{confirmDeleteSub.name}&rdquo; will be permanently removed.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDeleteSub(null)}
+                className="flex-1 py-3 rounded-xl font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 active:scale-95 transition-all"
+              >Cancel</button>
+              <button
+                onClick={deleteSubcategory}
+                className="flex-1 py-3 rounded-xl font-semibold text-white bg-red-500 active:scale-95 transition-all"
+              >Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
