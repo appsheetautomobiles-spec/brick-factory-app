@@ -317,19 +317,21 @@ export default function SettlementsPage() {
               </div>
             ) : (
               <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl p-4">
-                <div className="flex items-center gap-3 mb-3">
+                <div className={`flex items-center gap-3 ${settlementPayments.length > 0 ? 'mb-3' : ''}`}>
                   <span className="text-2xl">✅</span>
                   <div>
                     <p className="text-green-700 dark:text-green-400 font-semibold text-sm">All settled!</p>
                     <p className="text-green-600 dark:text-green-500 text-xs mt-0.5">Everyone&apos;s balances are even.</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowNewPeriodConfirm(true)}
-                  className="w-full py-2.5 bg-green-600 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform"
-                >
-                  Start New Period
-                </button>
+                {settlementPayments.length > 0 && (
+                  <button
+                    onClick={() => setShowNewPeriodConfirm(true)}
+                    className="w-full py-2.5 bg-green-600 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform"
+                  >
+                    Start New Period
+                  </button>
+                )}
               </div>
             )}
 
