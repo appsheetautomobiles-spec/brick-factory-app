@@ -13,6 +13,7 @@ interface Expense {
   category?: { name: string } | null;
 }
 interface Payment { id: string; expense_id: string; user_id: string; amount: number; payment_date: string; note?: string }
+interface SettlementPayment { id: string; from_user_id: string; to_user_id: string; amount: number; created_at: string }
 interface SessionTransfer { from_user_id: string; to_user_id: string; amount: number }
 interface Session { id: string; settled_at: string; note?: string; transfers?: SessionTransfer[] }
 interface MemberBalance { user_id: string; name: string; paid: number; share: number; balance: number }
@@ -52,36 +53,46 @@ export default function SettlementsPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [settlementPayments, setSettlementPayments] = useState<SettlementPayment[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [usersMap, setUsersMap] = useState<Record<string, AppUser>>({});
   const [showExpenses, setShowExpenses] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
-  const [showSettleConfirm, setShowSettleConfirm] = useState(false);
-  const [settleNote, setSettleNote] = useState('');
-  const [settling, setSettling] = useState(false);
+  const [showNewPeriodConfirm, setShowNewPeriodConfirm] = useState(false);
+  const [periodNote, setPeriodNote] = useState('');
+  const [startingPeriod, setStartingPeriod] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState<string | null>(null);
 
   const lastSession = sessions[0] ?? null;
   const periodStart = lastSession?.settled_at ?? null;
 
   const memberBalances = useMemo((): MemberBalance[] => {
     if (!members.length) return [];
-    const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
-    const share = totalExpenses / members.length;
+    // Share is based only on money actually paid — unpaid expenses are not yet settled
+    const totalPaidToVendors = payments.reduce((s, p) => s + Number(p.amount), 0);
+    const share = members.length > 0 ? totalPaidToVendors / members.length : 0;
 
     return members.map(m => {
-      const totalPaid = payments
+      const expensePaid = payments
         .filter(p => p.user_id === m.user_id)
         .reduce((s, p) => s + Number(p.amount), 0);
+      const settleSent = settlementPayments
+        .filter(p => p.from_user_id === m.user_id)
+        .reduce((s, p) => s + Number(p.amount), 0);
+      const settleReceived = settlementPayments
+        .filter(p => p.to_user_id === m.user_id)
+        .reduce((s, p) => s + Number(p.amount), 0);
+      const netContribution = expensePaid + settleSent - settleReceived;
       return {
         user_id: m.user_id,
         name: usersMap[m.user_id]?.full_name || usersMap[m.user_id]?.email?.split('@')[0] || 'Unknown',
-        paid: totalPaid,
+        paid: expensePaid,
         share,
-        balance: totalPaid - share,
+        balance: netContribution - share,
       };
     });
-  }, [members, expenses, payments, usersMap]);
+  }, [members, expenses, payments, settlementPayments, usersMap]);
 
   const transfers = useMemo(() => calculateTransfers(memberBalances), [memberBalances]);
 
@@ -97,7 +108,6 @@ export default function SettlementsPage() {
     (usersData ?? []).forEach((u: AppUser) => { uMap[u.id] = u; });
     const rawSess: Session[] = sessionsData ?? [];
 
-    // Fetch transfers for each session
     let sessWithTransfers: Session[] = rawSess;
     if (rawSess.length > 0) {
       const { data: transfersData } = await supabase
@@ -117,17 +127,21 @@ export default function SettlementsPage() {
     setSessions(sessWithTransfers);
 
     const lastSettled = rawSess[0]?.settled_at ?? null;
-    const [{ data: expData }, { data: payData }] = await Promise.all([
+    const [{ data: expData }, { data: payData }, { data: settlePayData }] = await Promise.all([
       lastSettled
         ? supabase.from('expenses').select('id, amount, paid_amount, expense_date, description, created_at, user_id, category:categories!category_id(name)').gte('created_at', lastSettled)
         : supabase.from('expenses').select('id, amount, paid_amount, expense_date, description, created_at, user_id, category:categories!category_id(name)'),
       lastSettled
         ? supabase.from('payments').select('*').gte('created_at', lastSettled)
         : supabase.from('payments').select('*'),
+      lastSettled
+        ? supabase.from('settlement_payments').select('*').gte('created_at', lastSettled)
+        : supabase.from('settlement_payments').select('*'),
     ]);
 
     setExpenses((expData ?? []) as unknown as Expense[]);
     setPayments(payData ?? []);
+    setSettlementPayments(settlePayData ?? []);
   };
 
   useEffect(() => {
@@ -141,11 +155,23 @@ export default function SettlementsPage() {
     init();
   }, [router]);
 
-  const handleSettle = async () => {
-    setSettling(true);
+  const handleMarkPaid = async (t: Transfer) => {
+    const key = `${t.from}-${t.to}`;
+    setMarkingPaid(key);
+    await supabase.from('settlement_payments').insert({
+      from_user_id: t.from,
+      to_user_id: t.to,
+      amount: t.amount,
+    });
+    await fetchData();
+    setMarkingPaid(null);
+  };
+
+  const handleStartNewPeriod = async () => {
+    setStartingPeriod(true);
     const { data: session } = await supabase
       .from('settlement_sessions')
-      .insert({ settled_by: user.id, note: settleNote || null })
+      .insert({ settled_by: user.id, note: periodNote || null })
       .select('id')
       .single();
 
@@ -155,10 +181,10 @@ export default function SettlementsPage() {
       );
     }
 
-    setShowSettleConfirm(false);
-    setSettleNote('');
+    setShowNewPeriodConfirm(false);
+    setPeriodNote('');
     await fetchData();
-    setSettling(false);
+    setStartingPeriod(false);
   };
 
   if (loading) return (
@@ -171,6 +197,8 @@ export default function SettlementsPage() {
   );
 
   const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
+  const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
+  const totalPending = totalExpenses - totalPaid;
   const maxPaid = Math.max(...memberBalances.map(m => m.paid), 1);
 
   return (
@@ -202,14 +230,19 @@ export default function SettlementsPage() {
             </button>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-2.5">
-            <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-3.5 border border-white/20">
-              <p className="text-orange-100 text-xs font-medium">Total Expenses</p>
-              <p className="text-white text-xl font-bold mt-1">{fmt(totalExpenses)}</p>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-3 border border-white/20">
+              <p className="text-orange-100 text-xs font-medium leading-tight">Total</p>
+              <p className="text-white text-lg font-bold mt-1">{fmt(totalExpenses)}</p>
             </div>
-            <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-3.5 border border-white/20">
-              <p className="text-orange-100 text-xs font-medium">Per Person Share</p>
-              <p className="text-white text-xl font-bold mt-1">{members.length ? fmt(totalExpenses / members.length) : '—'}</p>
+            <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-3 border border-white/20">
+              <p className="text-orange-100 text-xs font-medium leading-tight">Paid</p>
+              <p className="text-white text-lg font-bold mt-1">{fmt(totalPaid)}</p>
+              {totalPending > 0 && <p className="text-orange-300 text-xs mt-0.5">{fmt(totalPending)} due</p>}
+            </div>
+            <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-3 border border-white/20">
+              <p className="text-orange-100 text-xs font-medium leading-tight">Each Share</p>
+              <p className="text-white text-lg font-bold mt-1">{members.length && totalPaid > 0 ? fmt(totalPaid / members.length) : '—'}</p>
             </div>
           </div>
         </div>
@@ -254,51 +287,69 @@ export default function SettlementsPage() {
               </div>
             </div>
 
-            {/* Transfers needed */}
+            {/* Transfers */}
             {transfers.length > 0 ? (
               <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
                 <div className="px-4 pt-4 pb-2">
                   <p className="text-sm font-bold text-gray-800 dark:text-white">Transfers Needed</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Mark each transfer as paid once done</p>
                 </div>
                 <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {transfers.map((t, i) => (
-                    <div key={i} className="px-4 py-3 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-xs font-bold text-red-600">
-                          {t.fromName[0]?.toUpperCase()}
+                  {transfers.map((t, i) => {
+                    const key = `${t.from}-${t.to}`;
+                    const busy = markingPaid === key;
+                    return (
+                      <div key={i} className="px-4 py-3 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <div className="w-8 h-8 shrink-0 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-xs font-bold text-red-600">
+                            {t.fromName[0]?.toUpperCase()}
+                          </div>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400 shrink-0"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                          <div className="w-8 h-8 shrink-0 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-xs font-bold text-green-600">
+                            {t.toName[0]?.toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-800 dark:text-white truncate">
+                              <span className="text-red-500">{t.fromName}</span>
+                              <span className="text-gray-400 mx-1">→</span>
+                              <span className="text-green-600">{t.toName}</span>
+                            </p>
+                            <p className="text-xs font-bold text-gray-700 dark:text-gray-300">{fmt(t.amount)}</p>
+                          </div>
                         </div>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                        <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-xs font-bold text-green-600">
-                          {t.toName[0]?.toUpperCase()}
-                        </div>
-                        <p className="text-sm font-medium text-gray-800 dark:text-white">
-                          <span className="text-red-500">{t.fromName}</span> → <span className="text-green-600">{t.toName}</span>
-                        </p>
+                        <button
+                          onClick={() => handleMarkPaid(t)}
+                          disabled={busy}
+                          className="shrink-0 flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-xl active:scale-95 transition-transform disabled:opacity-50"
+                        >
+                          {busy ? (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                          ) : (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+                          )}
+                          Paid
+                        </button>
                       </div>
-                      <p className="text-base font-bold text-gray-900 dark:text-white">{fmt(t.amount)}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ) : (
-              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl p-4 flex items-center gap-3">
-                <span className="text-2xl">✅</span>
-                <div>
-                  <p className="text-green-700 dark:text-green-400 font-semibold text-sm">All settled!</p>
-                  <p className="text-green-600 dark:text-green-500 text-xs mt-0.5">Everyone&apos;s balances are even.</p>
+              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-2xl">✅</span>
+                  <div>
+                    <p className="text-green-700 dark:text-green-400 font-semibold text-sm">All settled!</p>
+                    <p className="text-green-600 dark:text-green-500 text-xs mt-0.5">Everyone&apos;s balances are even.</p>
+                  </div>
                 </div>
+                <button
+                  onClick={() => setShowNewPeriodConfirm(true)}
+                  className="w-full py-2.5 bg-green-600 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform"
+                >
+                  Start New Period
+                </button>
               </div>
-            )}
-
-            {/* Mark as Settled button — only when balances are uneven */}
-            {transfers.length > 0 && (
-              <button
-                onClick={() => setShowSettleConfirm(true)}
-                className="w-full py-3.5 bg-orange-600 text-white font-bold rounded-2xl text-base active:scale-95 transition-transform shadow-lg"
-                style={{ boxShadow: '0 4px 16px rgba(234,88,12,0.35)' }}
-              >
-                Mark as Settled
-              </button>
             )}
 
             {/* Expense details collapsible */}
@@ -442,49 +493,38 @@ export default function SettlementsPage() {
         </div>
       )}
 
-      {/* Settle confirmation sheet */}
-      {showSettleConfirm && (
+      {/* Start New Period confirmation sheet */}
+      {showNewPeriodConfirm && (
         <div className="fixed inset-0 z-30 flex items-end fade-in">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowSettleConfirm(false)} />
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowNewPeriodConfirm(false)} />
           <div className="relative w-full max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-t-3xl px-4 pt-3 pb-10 slide-up">
             <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-5" />
             <div className="text-center mb-5">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Mark as Settled</h2>
-              <p className="text-gray-400 text-sm mt-1">This will start a new settlement period. Balances will reset from now.</p>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Start New Period</h2>
+              <p className="text-gray-400 text-sm mt-1">All balances are clear. This closes the current period and starts fresh from now.</p>
             </div>
-
-            {transfers.length > 0 && (
-              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-3 mb-4">
-                <p className="text-orange-700 dark:text-orange-400 text-xs font-semibold mb-1.5">Pending transfers before settling:</p>
-                {transfers.map((t, i) => (
-                  <p key={i} className="text-orange-600 dark:text-orange-300 text-sm">
-                    {t.fromName} → {t.toName}: {fmt(t.amount)}
-                  </p>
-                ))}
-              </div>
-            )}
 
             <input
               type="text"
-              value={settleNote}
-              onChange={e => setSettleNote(e.target.value)}
+              value={periodNote}
+              onChange={e => setPeriodNote(e.target.value)}
               placeholder="Add a note (optional)"
               className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:border-orange-400 mb-4"
             />
 
             <div className="flex gap-3">
               <button
-                onClick={() => setShowSettleConfirm(false)}
+                onClick={() => setShowNewPeriodConfirm(false)}
                 className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-xl active:scale-95 transition-transform"
               >
                 Cancel
               </button>
               <button
-                onClick={handleSettle}
-                disabled={settling}
+                onClick={handleStartNewPeriod}
+                disabled={startingPeriod}
                 className="flex-1 py-3 bg-orange-600 text-white font-bold rounded-xl active:scale-95 transition-transform disabled:opacity-50"
               >
-                {settling ? 'Settling...' : 'Confirm Settle'}
+                {startingPeriod ? 'Starting...' : 'Confirm'}
               </button>
             </div>
           </div>
