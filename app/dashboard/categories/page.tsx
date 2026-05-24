@@ -92,7 +92,10 @@ export default function CategoriesPage() {
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
-      <p className="text-gray-400 text-sm">Loading...</p>
+      <div className="text-center">
+        <div className="text-5xl mb-3">🧱</div>
+        <p className="text-gray-400 text-sm font-medium">Loading...</p>
+      </div>
     </div>
   );
 

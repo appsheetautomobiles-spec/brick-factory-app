@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import BottomNav from '@/components/BottomNav';
 
-interface Member { id: string; user_id: string; email?: string; full_name?: string }
+interface Member { id: string; user_id: string }
 interface AppUser { id: string; email: string; full_name?: string }
 interface Expense {
   id: string; amount: number; paid_amount: number; expense_date: string; description: string;
@@ -55,13 +55,9 @@ export default function SettlementsPage() {
   const [usersMap, setUsersMap] = useState<Record<string, AppUser>>({});
   const [showExpenses, setShowExpenses] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [showManageMembers, setShowManageMembers] = useState(false);
   const [showSettleConfirm, setShowSettleConfirm] = useState(false);
   const [settleNote, setSettleNote] = useState('');
   const [settling, setSettling] = useState(false);
-  const [addingMember, setAddingMember] = useState(false);
-  const [newMemberEmail, setNewMemberEmail] = useState('');
-  const [memberError, setMemberError] = useState('');
 
   const lastSession = sessions[0] ?? null;
   const periodStart = lastSession?.settled_at ?? null;
@@ -69,7 +65,7 @@ export default function SettlementsPage() {
   const memberBalances = useMemo((): MemberBalance[] => {
     if (!members.length) return [];
     const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
-    const share = members.length > 0 ? totalExpenses / members.length : 0;
+    const share = totalExpenses / members.length;
 
     return members.map(m => {
       const paid = payments
@@ -141,26 +137,10 @@ export default function SettlementsPage() {
     setSettling(false);
   };
 
-  const handleAddMember = async () => {
-    setMemberError('');
-    if (!newMemberEmail.trim()) return;
-    const { data: found } = await supabase.from('users').select('id, email').eq('email', newMemberEmail.trim().toLowerCase()).single();
-    if (!found) { setMemberError('No user found with that email.'); return; }
-    const { error } = await supabase.from('settlement_members').insert({ user_id: found.id });
-    if (error) { setMemberError(error.message); return; }
-    setNewMemberEmail('');
-    await fetchData();
-  };
-
-  const handleRemoveMember = async (userId: string) => {
-    await supabase.from('settlement_members').delete().eq('user_id', userId);
-    await fetchData();
-  };
-
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
       <div className="text-center">
-        <div className="text-5xl mb-3">🤝</div>
+        <div className="text-5xl mb-3">🧱</div>
         <p className="text-gray-400 text-sm font-medium">Loading...</p>
       </div>
     </div>
@@ -182,23 +162,11 @@ export default function SettlementsPage() {
       {/* Hero */}
       <div className="bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 dark:from-orange-700 dark:via-orange-800 dark:to-gray-900">
         <div className="max-w-2xl mx-auto px-4 pt-6 pb-14">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-white">Settlements</h1>
-              <p className="text-orange-200 text-sm mt-0.5">
-                {periodStart ? `Since ${fmtDate(periodStart)}` : 'All time'}
-              </p>
-            </div>
-            <button
-              onClick={() => setShowManageMembers(true)}
-              className="flex items-center gap-1.5 bg-white/20 text-white text-xs font-semibold px-3 py-1.5 rounded-full border border-white/30 active:scale-95 transition-transform"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              Members
-            </button>
-          </div>
+          <h1 className="text-2xl font-bold text-white">Settlements</h1>
+          <p className="text-orange-200 text-sm mt-0.5">
+            {periodStart ? `Since ${fmtDate(periodStart)}` : 'All time'}
+          </p>
 
-          {/* Summary card */}
           <div className="mt-4 grid grid-cols-2 gap-2.5">
             <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-3.5 border border-white/20">
               <p className="text-orange-100 text-xs font-medium">Total Expenses</p>
@@ -216,15 +184,9 @@ export default function SettlementsPage() {
 
         {members.length === 0 ? (
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 text-center shadow-sm">
-            <div className="text-4xl mb-3">👥</div>
+            <div className="text-4xl mb-3">🧱</div>
             <p className="text-gray-700 dark:text-gray-200 font-semibold">No settlement members yet</p>
-            <p className="text-gray-400 text-sm mt-1">Add members to start tracking shared expenses.</p>
-            <button
-              onClick={() => setShowManageMembers(true)}
-              className="mt-4 px-5 py-2 bg-orange-600 text-white rounded-xl text-sm font-semibold active:scale-95 transition-transform"
-            >
-              Add Members
-            </button>
+            <p className="text-gray-400 text-sm mt-1">Add members via the backend to start tracking shared expenses.</p>
           </div>
         ) : (
           <>
@@ -232,7 +194,7 @@ export default function SettlementsPage() {
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
               <div className="px-4 pt-4 pb-2">
                 <p className="text-sm font-bold text-gray-800 dark:text-white">Member Balances</p>
-                <p className="text-xs text-gray-400 mt-0.5">Positive = overpaid (owed money), Negative = underpaid (owes money)</p>
+                <p className="text-xs text-gray-400 mt-0.5">Positive = overpaid (owed money) · Negative = underpaid (owes money)</p>
               </div>
               <div className="divide-y divide-gray-100 dark:divide-gray-700">
                 {memberBalances.map(m => (
@@ -274,11 +236,9 @@ export default function SettlementsPage() {
                         <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-xs font-bold text-green-600">
                           {t.toName[0]?.toUpperCase()}
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-800 dark:text-white">
-                            <span className="text-red-500">{t.fromName}</span> → <span className="text-green-600">{t.toName}</span>
-                          </p>
-                        </div>
+                        <p className="text-sm font-medium text-gray-800 dark:text-white">
+                          <span className="text-red-500">{t.fromName}</span> → <span className="text-green-600">{t.toName}</span>
+                        </p>
                       </div>
                       <p className="text-base font-bold text-gray-900 dark:text-white">{fmt(t.amount)}</p>
                     </div>
@@ -295,7 +255,7 @@ export default function SettlementsPage() {
               </div>
             )}
 
-            {/* Settle up button */}
+            {/* Mark as Settled button */}
             <button
               onClick={() => setShowSettleConfirm(true)}
               className="w-full py-3.5 bg-orange-600 text-white font-bold rounded-2xl text-base active:scale-95 transition-transform shadow-lg"
@@ -333,7 +293,9 @@ export default function SettlementsPage() {
                               <p className="text-sm font-medium text-gray-800 dark:text-white truncate">
                                 {(e.category as any)?.name ?? 'Uncategorized'}{e.description ? ` · ${e.description}` : ''}
                               </p>
-                              <p className="text-xs text-gray-400 mt-0.5">{fmtDate(e.expense_date)} · by {usersMap[e.user_id]?.full_name?.split(' ')[0] || usersMap[e.user_id]?.email?.split('@')[0] || 'Unknown'}</p>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {fmtDate(e.expense_date)} · by {usersMap[e.user_id]?.full_name?.split(' ')[0] || usersMap[e.user_id]?.email?.split('@')[0] || 'Unknown'}
+                              </p>
                             </div>
                             <p className="text-sm font-bold text-gray-900 dark:text-white ml-3">{fmt(e.amount)}</p>
                           </div>
@@ -397,69 +359,6 @@ export default function SettlementsPage() {
 
       <BottomNav />
 
-      {/* Manage Members bottom sheet */}
-      {showManageMembers && (
-        <div className="fixed inset-0 z-30 flex items-end fade-in">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { setShowManageMembers(false); setMemberError(''); setNewMemberEmail(''); }} />
-          <div className="relative w-full max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-t-3xl px-4 pt-3 pb-10 slide-up max-h-[85vh] overflow-y-auto">
-            <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-5" />
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Settlement Members</h2>
-
-            {/* Current members */}
-            <div className="space-y-2 mb-5">
-              {members.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">No members yet</p>
-              ) : (
-                members.map(m => (
-                  <div key={m.user_id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-sm font-bold text-orange-600">
-                        {(usersMap[m.user_id]?.full_name || usersMap[m.user_id]?.email || '?')[0].toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-800 dark:text-white">
-                          {usersMap[m.user_id]?.full_name || usersMap[m.user_id]?.email?.split('@')[0] || 'Unknown'}
-                        </p>
-                        <p className="text-xs text-gray-400">{usersMap[m.user_id]?.email}</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleRemoveMember(m.user_id)}
-                      className="w-7 h-7 flex items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30 text-red-500 active:scale-90 transition-transform"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Add new member */}
-            <div className="border-t border-gray-100 dark:border-gray-700 pt-4">
-              <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Add Member by Email</p>
-              <div className="flex gap-2">
-                <input
-                  type="email"
-                  value={newMemberEmail}
-                  onChange={e => setNewMemberEmail(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleAddMember()}
-                  placeholder="user@example.com"
-                  className="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-800 dark:text-white placeholder-gray-400 focus:outline-none focus:border-orange-400"
-                />
-                <button
-                  onClick={handleAddMember}
-                  disabled={addingMember}
-                  className="px-4 py-2.5 bg-orange-600 text-white font-semibold rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50"
-                >
-                  Add
-                </button>
-              </div>
-              {memberError && <p className="text-red-500 text-xs mt-1.5">{memberError}</p>}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Settle confirmation sheet */}
       {showSettleConfirm && (
         <div className="fixed inset-0 z-30 flex items-end fade-in">
@@ -467,7 +366,6 @@ export default function SettlementsPage() {
           <div className="relative w-full max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-t-3xl px-4 pt-3 pb-10 slide-up">
             <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-5" />
             <div className="text-center mb-5">
-              <div className="text-4xl mb-2">🤝</div>
               <h2 className="text-lg font-bold text-gray-900 dark:text-white">Mark as Settled</h2>
               <p className="text-gray-400 text-sm mt-1">This will start a new settlement period. Balances will reset from now.</p>
             </div>
