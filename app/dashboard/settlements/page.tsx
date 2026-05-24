@@ -70,13 +70,9 @@ export default function SettlementsPage() {
     const share = totalExpenses / members.length;
 
     return members.map(m => {
-      const paid = payments
+      const totalPaid = payments
         .filter(p => p.user_id === m.user_id)
         .reduce((s, p) => s + Number(p.amount), 0);
-      const expensePaid = expenses
-        .filter(e => e.user_id === m.user_id)
-        .reduce((s, e) => s + Number(e.amount), 0);
-      const totalPaid = paid + expensePaid;
       return {
         user_id: m.user_id,
         name: usersMap[m.user_id]?.full_name || usersMap[m.user_id]?.email?.split('@')[0] || 'Unknown',
