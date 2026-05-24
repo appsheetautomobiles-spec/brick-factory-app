@@ -54,6 +54,7 @@ export default function SettlementsPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [settlementPayments, setSettlementPayments] = useState<SettlementPayment[]>([]);
+  const [allSettlementPayments, setAllSettlementPayments] = useState<SettlementPayment[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [usersMap, setUsersMap] = useState<Record<string, AppUser>>({});
   const [showExpenses, setShowExpenses] = useState(false);
@@ -127,7 +128,7 @@ export default function SettlementsPage() {
     setSessions(sessWithTransfers);
 
     const lastSettled = rawSess[0]?.settled_at ?? null;
-    const [{ data: expData }, { data: payData }, { data: settlePayData }] = await Promise.all([
+    const [{ data: expData }, { data: payData }, { data: settlePayData }, { data: allSettlePayData }] = await Promise.all([
       lastSettled
         ? supabase.from('expenses').select('id, amount, paid_amount, expense_date, description, created_at, user_id, category:categories!category_id(name)').gte('created_at', lastSettled)
         : supabase.from('expenses').select('id, amount, paid_amount, expense_date, description, created_at, user_id, category:categories!category_id(name)'),
@@ -137,11 +138,13 @@ export default function SettlementsPage() {
       lastSettled
         ? supabase.from('settlement_payments').select('*').gte('created_at', lastSettled)
         : supabase.from('settlement_payments').select('*'),
+      supabase.from('settlement_payments').select('*').order('created_at', { ascending: true }),
     ]);
 
     setExpenses((expData ?? []) as unknown as Expense[]);
     setPayments(payData ?? []);
     setSettlementPayments(settlePayData ?? []);
+    setAllSettlementPayments(allSettlePayData ?? []);
   };
 
   useEffect(() => {
@@ -373,7 +376,8 @@ export default function SettlementsPage() {
                   ) : (
                     expenses.map(e => {
                       const expPayments = payments.filter(p => p.expense_id === e.id);
-                      const paidByExpenseOwner = Number(e.amount) - expPayments.reduce((s, p) => s + Number(p.amount), 0);
+                      const totalPaidForExpense = expPayments.reduce((s, p) => s + Number(p.amount), 0);
+                      const remaining = Number(e.amount) - totalPaidForExpense;
                       return (
                         <div key={e.id} className="px-4 py-3">
                           <div className="flex justify-between items-start">
@@ -387,20 +391,18 @@ export default function SettlementsPage() {
                             </div>
                             <p className="text-sm font-bold text-gray-900 dark:text-white ml-3">{fmt(e.amount)}</p>
                           </div>
-                          {(expPayments.length > 0 || paidByExpenseOwner > 0.5) && (
-                            <div className="mt-2 space-y-0.5">
-                              {paidByExpenseOwner > 0.5 && (
-                                <p className="text-xs text-gray-500 dark:text-gray-400 pl-2 border-l-2 border-orange-300">
-                                  {usersMap[e.user_id]?.full_name?.split(' ')[0] || 'Owner'} paid {fmt(paidByExpenseOwner)} (expense)
-                                </p>
-                              )}
-                              {expPayments.map(p => (
-                                <p key={p.id} className="text-xs text-gray-500 dark:text-gray-400 pl-2 border-l-2 border-blue-300">
-                                  {usersMap[p.user_id]?.full_name?.split(' ')[0] || 'Someone'} paid {fmt(p.amount)}{p.note ? ` · ${p.note}` : ''}
-                                </p>
-                              ))}
-                            </div>
-                          )}
+                          <div className="mt-2 space-y-0.5">
+                            {expPayments.map(p => (
+                              <p key={p.id} className="text-xs text-gray-500 dark:text-gray-400 pl-2 border-l-2 border-blue-300">
+                                {usersMap[p.user_id]?.full_name?.split(' ')[0] || 'Someone'} paid {fmt(p.amount)}{p.note ? ` · ${p.note}` : ''}
+                              </p>
+                            ))}
+                            {remaining > 0.5 && (
+                              <p className="text-xs text-orange-500 dark:text-orange-400 pl-2 border-l-2 border-orange-200">
+                                {fmt(remaining)} still due
+                              </p>
+                            )}
+                          </div>
                         </div>
                       );
                     })
@@ -428,31 +430,41 @@ export default function SettlementsPage() {
                   {sessions.length === 0 ? (
                     <p className="text-gray-400 text-sm text-center py-6">No settlements yet</p>
                   ) : (
-                    sessions.map(s => (
-                      <div key={s.id} className="px-4 py-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-medium text-gray-800 dark:text-white">{fmtDate(s.settled_at)}</p>
-                            {s.note && <p className="text-xs text-gray-400 mt-0.5">{s.note}</p>}
+                    sessions.map((s, idx) => {
+                      const periodEnd = new Date(s.settled_at).getTime();
+                      const prevSession = sessions[idx + 1];
+                      const periodStart = prevSession ? new Date(prevSession.settled_at).getTime() : 0;
+                      const periodPayments = allSettlementPayments.filter(p => {
+                        const t = new Date(p.created_at).getTime();
+                        return t > periodStart && t <= periodEnd;
+                      });
+                      return (
+                        <div key={s.id} className="px-4 py-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-gray-800 dark:text-white">{fmtDate(s.settled_at)}</p>
+                              {s.note && <p className="text-xs text-gray-400 mt-0.5">{s.note}</p>}
+                            </div>
+                            <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-semibold px-2 py-0.5 rounded-full">Settled</span>
                           </div>
-                          <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-semibold px-2 py-0.5 rounded-full">Settled</span>
+                          {periodPayments.length > 0 && (
+                            <div className="mt-2 space-y-1">
+                              <p className="text-xs text-gray-400 font-medium mb-1">Transactions</p>
+                              {periodPayments.map(p => (
+                                <div key={p.id} className="flex items-center justify-between text-xs pl-2 border-l-2 border-blue-300">
+                                  <span className="text-gray-500 dark:text-gray-400">
+                                    <span className="text-red-500 font-medium">{usersMap[p.from_user_id]?.full_name?.split(' ')[0] || usersMap[p.from_user_id]?.email?.split('@')[0] || 'Unknown'}</span>
+                                    {' → '}
+                                    <span className="text-green-600 font-medium">{usersMap[p.to_user_id]?.full_name?.split(' ')[0] || usersMap[p.to_user_id]?.email?.split('@')[0] || 'Unknown'}</span>
+                                  </span>
+                                  <span className="font-semibold text-gray-700 dark:text-gray-300">{fmt(p.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        {s.transfers && s.transfers.length > 0 && (
-                          <div className="mt-2 space-y-1">
-                            {s.transfers.map((t, i) => (
-                              <div key={i} className="flex items-center justify-between text-xs pl-2 border-l-2 border-orange-300">
-                                <span className="text-gray-500 dark:text-gray-400">
-                                  <span className="text-red-500 font-medium">{usersMap[t.from_user_id]?.full_name?.split(' ')[0] || usersMap[t.from_user_id]?.email?.split('@')[0] || 'Unknown'}</span>
-                                  {' → '}
-                                  <span className="text-green-600 font-medium">{usersMap[t.to_user_id]?.full_name?.split(' ')[0] || usersMap[t.to_user_id]?.email?.split('@')[0] || 'Unknown'}</span>
-                                </span>
-                                <span className="font-semibold text-gray-700 dark:text-gray-300">{fmt(t.amount)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               )}
