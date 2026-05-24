@@ -4,12 +4,14 @@ import { supabase } from '@/lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 function LoginContent() {
+  const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const accessDenied = searchParams.get('error') === 'access_denied';
 
   useEffect(() => {
+    // Handle OAuth callback code
     const code = new URLSearchParams(window.location.search).get('code');
     if (code) {
       supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
@@ -18,8 +20,13 @@ function LoginContent() {
       return;
     }
 
+    // Check existing session — if found, go straight to dashboard
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace('/dashboard');
+      if (session) {
+        router.replace('/dashboard');
+      } else {
+        setChecking(false);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -33,9 +40,7 @@ function LoginContent() {
     setLoading(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
     if (error) {
       alert(error.message);
@@ -43,19 +48,32 @@ function LoginContent() {
     }
   };
 
+  // Show splash while checking session (skip if access_denied so error shows immediately)
+  if (checking && !accessDenied) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700">
+        <div className="text-center animate-pulse">
+          <div className="text-7xl mb-4">🧱</div>
+          <p className="text-white font-bold text-xl tracking-tight">Ittige Factory</p>
+          <p className="text-orange-200 text-sm mt-1">Expense Tracker</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-700 to-blue-950 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 p-4 page-enter">
+      <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl p-8 w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="text-6xl mb-4">🧱</div>
-          <h1 className="text-2xl font-bold text-gray-800">Ittige Factory</h1>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Ittige Factory</h1>
           <p className="text-gray-400 text-sm mt-1">Expense Tracker</p>
         </div>
 
         {accessDenied ? (
-          <div className="px-4 py-4 bg-red-50 border border-red-200 rounded-xl text-center">
-            <p className="text-red-600 text-sm font-semibold">Access denied</p>
-            <p className="text-red-400 text-xs mt-0.5">Your account is not authorized to use this app.</p>
+          <div className="px-4 py-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-center">
+            <p className="text-red-600 dark:text-red-400 text-sm font-semibold">Access denied</p>
+            <p className="text-red-400 dark:text-red-500 text-xs mt-0.5">Your account is not authorized to use this app.</p>
           </div>
         ) : (
           <>
