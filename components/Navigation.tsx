@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '@/components/ThemeProvider';
@@ -45,6 +45,13 @@ export default function Navigation({ user, onRefresh, onProfileUpdate }: Props) 
   const [showProfile, setShowProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
+  const [dbName, setDbName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase.from('users').select('full_name').eq('id', user.id).single()
+      .then(({ data }) => { if (data?.full_name) setDbName(data.full_name); });
+  }, [user?.id]);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -60,7 +67,7 @@ export default function Navigation({ user, onRefresh, onProfileUpdate }: Props) 
   };
 
   const openProfile = () => {
-    setEditName(user?.user_metadata?.full_name || user?.email?.split('@')[0] || '');
+    setEditName(dbName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || '');
     setShowProfile(true);
   };
 
@@ -82,6 +89,7 @@ export default function Navigation({ user, onRefresh, onProfileUpdate }: Props) 
       if (authResult.error) throw new Error(authResult.error.message);
       if (apiResult.error) throw new Error(apiResult.error);
 
+      setDbName(name);
       setShowProfile(false);
       onProfileUpdate?.();
     } catch (err) {
@@ -92,8 +100,9 @@ export default function Navigation({ user, onRefresh, onProfileUpdate }: Props) 
   };
 
   const avatarUrl = user?.user_metadata?.avatar_url;
-  const displayName = user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User';
-  const initials = (user?.user_metadata?.full_name || displayName).slice(0, 2).toUpperCase();
+  const resolvedName = dbName || user?.user_metadata?.full_name || '';
+  const displayName = resolvedName.split(' ')[0] || user?.email?.split('@')[0] || 'User';
+  const initials = (resolvedName || displayName).slice(0, 2).toUpperCase();
 
   return (
     <>
