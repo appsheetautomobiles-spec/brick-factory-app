@@ -517,9 +517,9 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
             ))}
           </div>
 
-          {/* ALL TAB */}
+          {/* TAB CONTENT — keyed so each switch fades in */}
           {activeTab === 'all' && (
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
+            <div key="all" className="tab-enter bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-700 flex justify-between items-center">
                 <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">{filteredExpenses.length} expenses</span>
                 <div className="flex items-center gap-3">
@@ -570,7 +570,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
 
           {/* PENDING TAB */}
           {activeTab === 'pending' && (
-            <div className="space-y-3">
+            <div key="pending" className="tab-enter space-y-3">
               {pendingExpenses.length === 0 ? (
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-12 text-center">
                   <div className="text-5xl mb-3">✅</div>
@@ -644,7 +644,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
 
           {/* CATEGORY TAB */}
           {activeTab === 'category' && (
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
+            <div key="category" className="tab-enter bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-700 flex justify-between items-center">
                 <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Total · {fmt(grandTotal)}</span>
                 {grandPending > 0 && (
@@ -696,7 +696,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
 
           {/* DAILY TAB */}
           {activeTab === 'daily' && (
-            <div className="space-y-3">
+            <div key="daily" className="tab-enter space-y-3">
               {byDate.map(([date, items]) => {
                 const dayTotal = items.reduce((s, e) => s + Number(e.amount), 0);
                 return (
@@ -737,7 +737,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
 
           {/* USERS TAB */}
           {activeTab === 'users' && (
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
+            <div key="users" className="tab-enter bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-700">
                 <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">By member</span>
               </div>
@@ -773,7 +773,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
       {selectedExpense && (
         <div className="fixed inset-0 z-40 flex items-end fade-in">
           <div className="absolute inset-0 bg-black/50" onClick={closeDetail} />
-          <div className="relative w-full max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-t-3xl px-4 pt-3 pb-10 slide-up max-h-[90vh] overflow-y-auto">
+          <div className="relative w-full max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-t-3xl px-4 pt-3 pb-10 slide-up max-h-[90vh] overflow-y-auto scroll-smooth-ios">
             <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-5" />
             {!confirmingDelete ? (
               <>
@@ -936,7 +936,7 @@ export default function ExpenseList({ refreshKey, currentUserId, onStatsChange }
       {editingExpense && (
         <div className="fixed inset-0 z-40 flex items-end fade-in">
           <div className="absolute inset-0 bg-black/50" onClick={() => setEditingExpense(null)} />
-          <div className="relative w-full max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-t-3xl px-4 pt-3 pb-10 slide-up max-h-[90vh] overflow-y-auto">
+          <div className="relative w-full max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-t-3xl px-4 pt-3 pb-10 slide-up max-h-[90vh] overflow-y-auto scroll-smooth-ios">
             <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-5" />
             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Edit Expense</h3>
             {(() => {

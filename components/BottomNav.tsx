@@ -57,7 +57,7 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-20 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800">
+    <div className="fixed bottom-0 left-0 right-0 z-20 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t border-gray-100 dark:border-gray-800">
       <div className="max-w-2xl mx-auto flex h-16">
         {TABS.map(({ href, label, Icon }) => {
           const active = pathname === href;
@@ -65,10 +65,15 @@ export default function BottomNav() {
             <Link
               key={href}
               href={href}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${active ? 'text-orange-600' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}
+              className={`flex-1 relative flex flex-col items-center justify-center gap-0.5 transition-all duration-200 active:scale-90 ${active ? 'text-orange-600' : 'text-gray-400 dark:text-gray-500'}`}
             >
+              {active && (
+                <span className="nav-pill absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-1 bg-orange-500 rounded-full" />
+              )}
               <Icon filled={active} />
-              <span className="text-xs font-semibold">{label}</span>
+              <span className={`text-xs font-semibold transition-all duration-200 ${active ? 'text-orange-600' : 'text-gray-400 dark:text-gray-500'}`}>
+                {label}
+              </span>
             </Link>
           );
         })}
