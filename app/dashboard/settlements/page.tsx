@@ -14,8 +14,7 @@ interface Expense {
 }
 interface Payment { id: string; expense_id: string; user_id: string; amount: number; payment_date: string; note?: string }
 interface SettlementPayment { id: string; from_user_id: string; to_user_id: string; amount: number; created_at: string }
-interface SessionTransfer { from_user_id: string; to_user_id: string; amount: number }
-interface Session { id: string; settled_at: string; note?: string; transfers?: SessionTransfer[] }
+interface Session { id: string; settled_at: string; note?: string }
 interface MemberBalance { user_id: string; name: string; paid: number; share: number; balance: number }
 interface Transfer { from: string; fromName: string; to: string; toName: string; amount: number }
 
@@ -64,6 +63,7 @@ export default function SettlementsPage() {
   const [periodNote, setPeriodNote] = useState('');
   const [startingPeriod, setStartingPeriod] = useState(false);
   const [markingPaid, setMarkingPaid] = useState<string | null>(null);
+  const [confirmTransfer, setConfirmTransfer] = useState<Transfer | null>(null);
 
   const lastSession = sessions[0] ?? null;
   const periodStart = lastSession?.settled_at ?? null;
@@ -109,23 +109,9 @@ export default function SettlementsPage() {
     (usersData ?? []).forEach((u: AppUser) => { uMap[u.id] = u; });
     const rawSess: Session[] = sessionsData ?? [];
 
-    let sessWithTransfers: Session[] = rawSess;
-    if (rawSess.length > 0) {
-      const { data: transfersData } = await supabase
-        .from('settlement_transfers')
-        .select('session_id, from_user_id, to_user_id, amount')
-        .in('session_id', rawSess.map(s => s.id));
-      const transfersBySession: Record<string, SessionTransfer[]> = {};
-      (transfersData ?? []).forEach((t: any) => {
-        if (!transfersBySession[t.session_id]) transfersBySession[t.session_id] = [];
-        transfersBySession[t.session_id].push({ from_user_id: t.from_user_id, to_user_id: t.to_user_id, amount: t.amount });
-      });
-      sessWithTransfers = rawSess.map(s => ({ ...s, transfers: transfersBySession[s.id] ?? [] }));
-    }
-
     setMembers(mems);
     setUsersMap(uMap);
-    setSessions(sessWithTransfers);
+    setSessions(rawSess);
 
     const lastSettled = rawSess[0]?.settled_at ?? null;
     const [{ data: expData }, { data: payData }, { data: settlePayData }, { data: allSettlePayData }] = await Promise.all([
@@ -158,8 +144,11 @@ export default function SettlementsPage() {
     init();
   }, [router]);
 
-  const handleMarkPaid = async (t: Transfer) => {
+  const handleMarkPaid = async () => {
+    if (!confirmTransfer) return;
+    const t = confirmTransfer;
     const key = `${t.from}-${t.to}`;
+    setConfirmTransfer(null);
     setMarkingPaid(key);
     await supabase.from('settlement_payments').insert({
       from_user_id: t.from,
@@ -172,17 +161,9 @@ export default function SettlementsPage() {
 
   const handleStartNewPeriod = async () => {
     setStartingPeriod(true);
-    const { data: session } = await supabase
+    await supabase
       .from('settlement_sessions')
-      .insert({ settled_by: user.id, note: periodNote || null })
-      .select('id')
-      .single();
-
-    if (session && transfers.length > 0) {
-      await supabase.from('settlement_transfers').insert(
-        transfers.map(t => ({ session_id: session.id, from_user_id: t.from, to_user_id: t.to, amount: t.amount }))
-      );
-    }
+      .insert({ settled_by: user.id, note: periodNote || null });
 
     setShowNewPeriodConfirm(false);
     setPeriodNote('');
@@ -304,13 +285,6 @@ export default function SettlementsPage() {
                     return (
                       <div key={i} className="px-4 py-3 flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <div className="w-8 h-8 shrink-0 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-xs font-bold text-red-600">
-                            {t.fromName[0]?.toUpperCase()}
-                          </div>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400 shrink-0"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                          <div className="w-8 h-8 shrink-0 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-xs font-bold text-green-600">
-                            {t.toName[0]?.toUpperCase()}
-                          </div>
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-gray-800 dark:text-white truncate">
                               <span className="text-red-500">{t.fromName}</span>
@@ -320,18 +294,22 @@ export default function SettlementsPage() {
                             <p className="text-xs font-bold text-gray-700 dark:text-gray-300">{fmt(t.amount)}</p>
                           </div>
                         </div>
-                        <button
-                          onClick={() => handleMarkPaid(t)}
-                          disabled={busy}
-                          className="shrink-0 flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-xl active:scale-95 transition-transform disabled:opacity-50"
-                        >
-                          {busy ? (
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                          ) : (
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6 9 17l-5-5"/></svg>
-                          )}
-                          Paid
-                        </button>
+                        {user?.id === t.to ? (
+                          <button
+                            onClick={() => setConfirmTransfer(t)}
+                            disabled={busy}
+                            className="shrink-0 flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded-xl active:scale-95 transition-transform disabled:opacity-50"
+                          >
+                            {busy ? (
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                            ) : (
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+                            )}
+                            Paid
+                          </button>
+                        ) : (
+                          <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500 font-medium">awaiting {t.toName.split(' ')[0]}</span>
+                        )}
                       </div>
                     );
                   })}
@@ -447,21 +425,21 @@ export default function SettlementsPage() {
                             </div>
                             <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-semibold px-2 py-0.5 rounded-full">Settled</span>
                           </div>
-                          {periodPayments.length > 0 && (
-                            <div className="mt-2 space-y-1">
-                              <p className="text-xs text-gray-400 font-medium mb-1">Transactions</p>
-                              {periodPayments.map(p => (
-                                <div key={p.id} className="flex items-center justify-between text-xs pl-2 border-l-2 border-blue-300">
-                                  <span className="text-gray-500 dark:text-gray-400">
-                                    <span className="text-red-500 font-medium">{usersMap[p.from_user_id]?.full_name?.split(' ')[0] || usersMap[p.from_user_id]?.email?.split('@')[0] || 'Unknown'}</span>
-                                    {' → '}
-                                    <span className="text-green-600 font-medium">{usersMap[p.to_user_id]?.full_name?.split(' ')[0] || usersMap[p.to_user_id]?.email?.split('@')[0] || 'Unknown'}</span>
-                                  </span>
-                                  <span className="font-semibold text-gray-700 dark:text-gray-300">{fmt(p.amount)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                          <div className="mt-2 space-y-1">
+                            <p className="text-xs text-gray-400 font-medium mb-1">Transactions</p>
+                            {periodPayments.length === 0 ? (
+                              <p className="text-xs text-gray-400 italic pl-2">No transactions</p>
+                            ) : periodPayments.map(p => (
+                              <div key={p.id} className="flex items-center justify-between text-xs pl-2 border-l-2 border-blue-300">
+                                <span className="text-gray-500 dark:text-gray-400">
+                                  <span className="text-red-500 font-medium">{usersMap[p.from_user_id]?.full_name?.split(' ')[0] || usersMap[p.from_user_id]?.email?.split('@')[0] || 'Unknown'}</span>
+                                  {' → '}
+                                  <span className="text-green-600 font-medium">{usersMap[p.to_user_id]?.full_name?.split(' ')[0] || usersMap[p.to_user_id]?.email?.split('@')[0] || 'Unknown'}</span>
+                                </span>
+                                <span className="font-semibold text-gray-700 dark:text-gray-300">{fmt(p.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       );
                     })
@@ -501,6 +479,36 @@ export default function SettlementsPage() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Mark Paid confirm sheet */}
+      {confirmTransfer && (
+        <div className="fixed inset-0 z-30 flex items-end fade-in">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setConfirmTransfer(null)} />
+          <div className="relative w-full max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-t-3xl px-4 pt-3 pb-10 slide-up">
+            <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-5" />
+            <div className="text-center mb-5">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Confirm Payment Received</h2>
+              <p className="text-gray-400 text-sm mt-1 mt-2">
+                Confirm that <span className="font-semibold text-red-500">{confirmTransfer.fromName}</span> has paid you <span className="font-bold text-gray-800 dark:text-white">{fmt(confirmTransfer.amount)}</span>?
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmTransfer(null)}
+                className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold rounded-xl active:scale-95 transition-transform"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMarkPaid}
+                className="flex-1 py-3 bg-green-600 text-white font-bold rounded-xl active:scale-95 transition-transform"
+              >
+                Yes, Received
+              </button>
+            </div>
           </div>
         </div>
       )}
